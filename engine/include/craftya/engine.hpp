@@ -100,6 +100,7 @@ private:
     void tickPlaying(float dt);
     void tickMenu(float dt);
     void rebuildGui();
+    void handleKeyboardTap(float x, float y);
 
     EngineConfig cfg_;
     EngineState state_ = EngineState::Boot;

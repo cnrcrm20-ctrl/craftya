@@ -55,6 +55,29 @@ $CXX $FLAGS engine/tests/test_systems.cpp \
 echo "▸ ASCII görüntüleyici derleniyor…"
 $CXX $FLAGS apps/desktop/viewer.cpp $SRC -o build/craftya_viewer
 
+echo "▸ arayüz font verisi üretiliyor…"
+python3 - <<'PYFONT'
+import re
+src = open('android/app/src/main/cpp/ui_renderer.cpp').read()
+start = src.index('const Glyph kGlyphs[] = {')
+end = src.index('};', src.index('{static_cast<char>(13)')) + 2
+table = src[start:end]
+out = ['// OTOMATİK ÜRETİLDİ (ui_renderer.cpp glif tablosu) — elle düzenleme',
+       '#include <cstdint>', '', 'namespace {',
+       'struct Glyph { char c; const char* rows[7]; };', table,
+       'static const Glyph* findG(uint8_t code){ for(const auto& g: kGlyphs) if((uint8_t)g.c==code) return &g; return nullptr; }',
+       '} // namespace', '',
+       'bool glyphPixelRaw(uint8_t code, int x, int y){',
+       '    const Glyph* g=findG(code); if(!g||x<0||x>=5||y<0||y>=7) return false;',
+       "    return g->rows[y][x]=='#';", '}', '',
+       'int glyphCount(){ return (int)(sizeof(kGlyphs)/sizeof(kGlyphs[0])); }', '']
+open('build/ui_font_data.cpp', 'w').write('\n'.join(out))
+PYFONT
+
+echo "▸ arayüz önizleyici derleniyor…"
+$CXX $FLAGS apps/desktop/ui_preview.cpp build/ui_font_data.cpp \
+     engine/src/gui.cpp engine/src/inventory.cpp -o build/craftya_uipreview
+
 echo "▸ simülasyon rasterizörü derleniyor…"
 $CXX $FLAGS apps/desktop/render_sim.cpp \
      engine/src/game.cpp engine/src/render.cpp engine/src/mesher.cpp \

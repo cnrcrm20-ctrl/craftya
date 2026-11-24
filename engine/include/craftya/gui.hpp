@@ -23,7 +23,7 @@ struct Rect {
     }
 };
 
-enum class DrawCmd : uint8_t { Rect, TexturedRect, Text, Line };
+enum class DrawCmd : uint8_t { Rect, TexturedRect, Text, Line, Circle };
 
 struct DrawItem {
     DrawCmd cmd = DrawCmd::Rect;
@@ -35,6 +35,8 @@ struct DrawItem {
     int align = 0;            // 0 sol 1 orta 2 sağ
     float lineWidth = 1.f;
     float x2 = 0, y2 = 0;     // Line için bitiş
+    float radius = 0.f;       // Circle için yarıçap
+    float thickness = 0.f;    // Circle halka kalınlığı (0 = dolu)
 };
 
 // çizim listesi toplayıcı
@@ -47,6 +49,7 @@ public:
               const Color& c = Color{}, int align = 0);
     void line(float x1, float y1, float x2, float y2, const Color& c, float width = 1.f);
     // dokunmatik yuvarlak buton (dokunma alanı dikdörtgen kalır)
+    void circle(float cx, float cy, float radius, const Color& fill, float thickness = 0.f);
     void circleButton(float cx, float cy, float radius, const Color& fill,
                       const Color& border, const std::string& label);
 
@@ -77,8 +80,19 @@ public:
         bool attackHeld = false;
         bool useHeld = false;
         bool breakHeld = false;
+        // tek karelik tetiklemeler (HUD dolduracak)
+        bool inventoryTapped = false;
+        bool settingsTapped = false;
+        bool chatTapped = false;
+        bool hotbarTapped = false;
+        int hotbarIndex = -1;
     };
     TouchLayout touch;
+
+    // üst köşe düğmeleri (envanter / ayarlar / sohbet)
+    void setTopButtons(float cx, float cy, float radius);
+    // dokunmatikte sürükleme ile hotbar slot değiştirme eşiği
+    void setHotbarRects(const Rect& bar);
 
     void setJoystick(float cx, float cy, float radius);
     void setLookArea(const Rect& r);
@@ -100,6 +114,14 @@ private:
         int pointerId = -1;
     };
 
+    struct TopButton {
+        float cx = 0, cy = 0, radius = 30.f;
+        std::string label;
+        enum Kind { Inventory, Settings, Chat } kind = Inventory;
+        int pointerId = -1;
+        bool pressed = false;
+    };
+
     float w_ = 1920.f, h_ = 1080.f, dpi_ = 1.f;
     float joyCx_ = 0, joyCy_ = 0, joyRadius_ = 150.f;
     float joyKnobX_ = 0, joyKnobY_ = 0;
@@ -108,6 +130,10 @@ private:
     int lookPointer_ = -1;
     float lastLookX_ = 0, lastLookY_ = 0;
     std::vector<ActionButton> buttons_;
+    std::vector<TopButton> topButtons_;
+    Rect hotbarRect_;
+    bool hotbarPointerActive_ = false;
+    int hotbarPointer_ = -1;
 };
 
 // ---------------- menü sistemi ----------------
@@ -136,6 +162,11 @@ public:
         bool available = true;
     };
     std::vector<ModeRow> modes;
+
+    // envanter ekranı için (MenuId::Inventory)
+    const Inventory* inv = nullptr;
+    // imleç (envanter ızgarasında seçili yuva)
+    int cursorSlot = 0;
 };
 
 class MenuSystem {
@@ -188,9 +219,24 @@ public:
     void build(DrawList& out, float screenW, float screenH, float fadeAfter = 8.f);
     void update(float dt);
     const std::vector<std::string>& lines() const { return lines_; }
+
+    // --- sohbet girdisi (mobil klavye yerine gömülü tuş takımı) ---
+    void openInput() { inputOpen_ = true; input_.clear(); }
+    void closeInput() { inputOpen_ = false; input_.clear(); }
+    bool inputOpen() const { return inputOpen_; }
+    void typeChar(char c) { if (input_.size() < 120) input_.push_back(c); }
+    void backspace() { if (!input_.empty()) input_.pop_back(); }
+    // gönderildiyse metni döndürür (girdi kapanır), aksi halde boş
+    std::string submit();
+    const std::string& pendingText() const { return input_; }
+    // ekran klavyesi çizimi (build içinde otomatik)
+    void buildKeyboard(DrawList& out, float screenW, float screenH);
+
 private:
     std::vector<std::string> lines_;
     float sinceLast_ = 999.f;
+    bool inputOpen_ = false;
+    std::string input_;
 };
 
 } // namespace craftya

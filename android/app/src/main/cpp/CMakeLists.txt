@@ -1,49 +1,43 @@
-cmake_minimum_required(VERSION 3.22.1)
+# Craftya — Android yerel kütüphane (libcraftya.so)
+cmake_minimum_required(VERSION 3.18)
 project(craftya CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS_RELEASE "-O2 -fno-math-errno")
 
-set(ENGINE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../engine)
+set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../engine)
 
 add_library(craftya SHARED
-    native_main.cpp
-    android_platform.cpp
-    ${ENGINE_ROOT}/src/game.cpp
-    ${ENGINE_ROOT}/src/render.cpp
-    ${ENGINE_ROOT}/src/mesher.cpp
-    ${ENGINE_ROOT}/src/physics.cpp
-    ${ENGINE_ROOT}/src/platform.cpp
-    ${ENGINE_ROOT}/src/json.cpp
-    ${ENGINE_ROOT}/src/lighting.cpp
-    ${ENGINE_ROOT}/src/atlas.cpp
-    ${ENGINE_ROOT}/src/renderer.cpp
-    ${ENGINE_ROOT}/src/inventory.cpp
-    ${ENGINE_ROOT}/src/save.cpp
-    ${ENGINE_ROOT}/src/net.cpp
-    ${ENGINE_ROOT}/src/ecs.cpp
-    ${ENGINE_ROOT}/src/audio.cpp
-    ${ENGINE_ROOT}/src/gui.cpp
-    ${ENGINE_ROOT}/src/interact.cpp
-    ${ENGINE_ROOT}/src/anim.cpp
+        android_main.cpp
+        gles_backend.cpp
+        ui_renderer.cpp
+        ${ENGINE_DIR}/src/json.cpp
+        ${ENGINE_DIR}/src/lighting.cpp
+        ${ENGINE_DIR}/src/atlas.cpp
+        ${ENGINE_DIR}/src/engine.cpp
+        ${ENGINE_DIR}/src/mesher.cpp
+        ${ENGINE_DIR}/src/physics.cpp
+        ${ENGINE_DIR}/src/inventory.cpp
+        ${ENGINE_DIR}/src/render.cpp
+        ${ENGINE_DIR}/src/renderer.cpp
+        ${ENGINE_DIR}/src/game.cpp
+        ${ENGINE_DIR}/src/platform.cpp
+        ${ENGINE_DIR}/src/audio.cpp
+        ${ENGINE_DIR}/src/net.cpp
+        ${ENGINE_DIR}/src/save.cpp
+        ${ENGINE_DIR}/src/gui.cpp
+        ${ENGINE_DIR}/src/interact.cpp
+        ${ENGINE_DIR}/src/anim.cpp
+        ${ENGINE_DIR}/src/ecs.cpp
 )
 
-target_include_directories(craftya PRIVATE ${ENGINE_ROOT}/include)
-
-target_compile_options(craftya PRIVATE
-    -O2
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-    -funroll-loops
-    -fno-exceptions
-    -fno-rtti
-)
+target_include_directories(craftya PRIVATE ${ENGINE_DIR}/include)
 
 target_link_libraries(craftya
-    android
-    log
-    EGL
-    GLESv3
-    atomic
+        android
+        log
+        EGL
+        GLESv3
+        m
 )

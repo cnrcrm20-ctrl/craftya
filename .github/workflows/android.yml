@@ -1,0 +1,58 @@
+name: Android APK
+
+on:
+  push:
+    branches: [ 'arena/deab440e-craftya' ]
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: NDK 26.1
+        run: |
+          yes | sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Motor testleri (masaustu)
+        run: ./build.sh
+
+      - name: APK derle
+        working-directory: android
+        run: |
+          gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: APK artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftya-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Release'e yukle
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.2.${{ github.run_number }}
+          name: "Craftya 0.2.${{ github.run_number }}"
+          files: android/app/build/outputs/apk/release/*.apk
+          generate_release_notes: true

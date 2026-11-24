@@ -184,6 +184,11 @@ PlayerSnapshot Engine::localSnapshot() const {
 
 // ---------------- girdi ----------------
 void Engine::onTouchDown(int pointerId, float x, float y) {
+    // sohbet klavyesi açıksa girdi oraya gider
+    if (chat_.inputOpen() && state_ == EngineState::Playing) {
+        handleKeyboardTap(x, y);
+        return;
+    }
     if (state_ == EngineState::Playing && menus_.isOpen()) {
         menus_.onTap(x, y, static_cast<float>(width_), static_cast<float>(height_));
         return;
@@ -284,6 +289,28 @@ void Engine::tickPlaying(float dt) {
     in.lookDY *= 0.0035f * cfg_.settings.touchSensitivity *
                  (cfg_.settings.invertY ? -1.f : 1.f);
 
+    // --- arayüz dokunmaları ---
+    if (hud_.touch.inventoryTapped) {
+        hud_.touch.inventoryTapped = false;
+        if (menus_.current() == MenuId::Inventory) menus_.close();
+        else { menus_.open(MenuId::Inventory); menus_.screen().inv = &inv_; }
+    }
+    if (hud_.touch.settingsTapped) {
+        hud_.touch.settingsTapped = false;
+        if (menus_.isOpen()) menus_.close();
+        else menus_.open(MenuId::Settings);
+    }
+    if (hud_.touch.chatTapped) {
+        hud_.touch.chatTapped = false;
+        if (chat_.inputOpen()) chat_.closeInput();
+        else chat_.openInput();
+    }
+    if (hud_.touch.hotbarTapped && hud_.touch.hotbarIndex >= 0) {
+        inv_.select(hud_.touch.hotbarIndex);
+        hud_.touch.hotbarTapped = false;
+        hud_.touch.hotbarIndex = -1;
+    }
+
     game_->update(dt, in);
     applySettings();
 
@@ -314,6 +341,62 @@ void Engine::tickPlaying(float dt) {
     }
 }
 
+// gömülü sohbet klavyesi: dokunma → karakter
+void Engine::handleKeyboardTap(float x, float y) {
+    const float w = static_cast<float>(width_);
+    const float h = static_cast<float>(height_);
+    const float kbH = h * 0.40f;
+    const float kbY = h - kbH;
+    if (y < kbY) { chat_.closeInput(); return; }
+
+    // GÖNDER / kapat şeridi
+    float fieldW = w * 0.70f;
+    float sendX = w * 0.04f + fieldW + 10.f;
+    if (y < kbY + 60.f) {
+        if (x >= sendX) {
+            std::string msg = chat_.submit();
+            if (!msg.empty()) {
+                chat_.add("Sen", msg);
+                mesh_.sendChat(msg);
+                toast_.show("gonderildi", 2.f);
+            } else {
+                chat_.closeInput();
+            }
+        }
+        return;
+    }
+
+    const char* rows[4] = {"1234567890", "qwertyuiop", "asdfghjklg", "zxcvbnm,.?"};
+    float availH = kbH - 76.f;
+    float keyW = w * 0.075f;
+    float keyH = (availH - 4.f * 5.f) / 5.f;
+    keyH = std::min(keyH, keyW * 1.15f);
+
+    // boşluk + kapat satırı
+    float sy = kbY + 64.f + 4.f * (keyH + 4.f);
+    if (y >= sy) {
+        float spaceW = w * 0.46f;
+        if (x >= (w - spaceW) * 0.5f && x < (w + spaceW) * 0.5f) chat_.typeChar(' ');
+        else chat_.closeInput();
+        return;
+    }
+
+    for (int r = 0; r < 4; ++r) {
+        int n = static_cast<int>(std::strlen(rows[r]));
+        float rowW = n * (keyW + 4.f);
+        float sx = (w - rowW) * 0.5f;
+        float ky = kbY + 64.f + r * (keyH + 4.f);
+        if (y < ky || y >= ky + keyH) continue;
+        for (int i = 0; i < n; ++i) {
+            float kx = sx + i * (keyW + 4.f);
+            if (x < kx || x >= kx + keyW) continue;
+            if (r == 2 && i == n - 1) chat_.backspace();   // SIL
+            else chat_.typeChar(rows[r][i]);
+            return;
+        }
+    }
+}
+
 void Engine::rebuildGui() {
     if (state_ != EngineState::Playing) return;
 }
@@ -332,6 +415,10 @@ void Engine::render(DrawList* guiOut) {
                    static_cast<int>(mesh_.remotePlayers().size()),
                    sessionSeconds_);
         chat_.build(*guiOut, static_cast<float>(width_), static_cast<float>(height_));
+        chat_.buildKeyboard(*guiOut, static_cast<float>(width_), static_cast<float>(height_));
+        // sohbet girdisi açıkken dokunma alanları klavyeye gider
+        if (chat_.inputOpen() && menus_.current() == MenuId::Inventory)
+            menus_.screen().inv = &inv_;
     }
     if (menus_.isOpen() || state_ == EngineState::MainMenu ||
         state_ == EngineState::Paused) {

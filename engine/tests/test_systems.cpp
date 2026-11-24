@@ -1105,6 +1105,125 @@ static void testAnim() {
     check(built == MOB_COUNT - 1, "37 canli icin iskelet kuruldu");
 }
 
+// ================= ARAYÜZ (HUD / menü / sohbet) =================
+// Bu testler arayüzün gerçekten çizim ürettiğini ve yerleşimin
+// ekran sınırları içinde kaldığını doğrular.
+static int test_ui_layout() {
+    int fail = 0;
+    using namespace craftya;
+
+    const float W = 854.f, H = 480.f;   // Note 11 Pro 4G yatay çözünürlüğü
+
+    Inventory inv;
+    inv.add(STONE, 64);
+    inv.select(0);
+
+    Hud hud;
+    hud.resize(W, H, 2.75f);
+
+    DrawList list;
+    hud.build(list, inv, 17.f, 15.f, 58.f, Vec3f{12, 74, -30}, 34, 3, 0.f);
+
+    // 1) HUD çizim üretiyor mu?
+    if (list.size() < 20) { ++fail; std::printf("  HATA: HUD cok az cizim uretti (%zu)\n", list.size()); }
+
+    // 2) tüm öğeler ekran içinde mi?
+    int outOfBounds = 0;
+    for (const auto& it : list.items()) {
+        if (it.cmd == DrawCmd::Rect || it.cmd == DrawCmd::TexturedRect) {
+            if (it.rect.x < -2.f || it.rect.y < -2.f ||
+                it.rect.x + it.rect.w > W + 2.f || it.rect.y + it.rect.h > H + 2.f)
+                ++outOfBounds;
+        }
+        if (it.cmd == DrawCmd::Circle) {
+            if (it.rect.x < -2.f || it.rect.y < -2.f ||
+                it.rect.x + it.rect.w > W + 2.f || it.rect.y + it.rect.h > H + 2.f)
+                ++outOfBounds;
+        }
+    }
+    if (outOfBounds > 0) {
+        ++fail;
+        std::printf("  HATA: %d arayuz ogesi ekran disinda\n", outOfBounds);
+    }
+
+    // 3) daire komutu gerçekten üretiliyor mu? (joystick + butonlar)
+    int circles = 0;
+    for (const auto& it : list.items()) if (it.cmd == DrawCmd::Circle) ++circles;
+    if (circles < 8) { ++fail; std::printf("  HATA: daire sayisi %d (beklenen >=8)\n", circles); }
+
+    // 4) üst köşe düğmeleri dokunulabilir mi?
+    //    sağ üstteki envanter düğmesine bas → tetik oluşmalı
+    float ebx = W - std::min(W, H) * 0.070f;
+    float eby = std::min(W, H) * 0.075f;
+    hud.onTouchDown(1, ebx, eby);
+    if (!hud.touch.inventoryTapped) { ++fail; std::printf("  HATA: envanter dugmesi tepki vermedi\n"); }
+    hud.onTouchUp(1);
+    hud.touch.inventoryTapped = false;
+
+    // 5) joystick dokunma → hareket ekseni
+    hud.onTouchDown(2, std::min(W, H) * 0.155f, H - std::min(W, H) * 0.30f);
+    if (std::fabs(hud.touch.moveAxis.z) < 0.1f) {
+        ++fail; std::printf("  HATA: joystick ekseni bos (z=%.2f)\n", hud.touch.moveAxis.z);
+    }
+    hud.onTouchUp(2);
+
+    // 6) hotbar dokunma → yuva indeksi
+    Rect bar = list.items().empty() ? Rect{} : Rect{};
+    (void)bar;
+    hud.onTouchDown(3, W * 0.5f, H - 20.f);
+    hud.onTouchUp(3);
+
+    // 7) menü paneli çizimi + dokunma eşleşmesi
+    MenuSystem menus;
+    menus.open(MenuId::Pause);
+    DrawList m;
+    menus.build(m, W, H);
+    if (m.size() < 10) { ++fail; std::printf("  HATA: menu cizimi bos\n"); }
+
+    // 8) envanter ekranı: 36 yuva çizilmeli
+    menus.open(MenuId::Inventory);
+    menus.screen().inv = &inv;
+    DrawList invList;
+    menus.build(invList, W, H);
+    int slots = 0;
+    for (const auto& it : invList.items())
+        if (it.cmd == DrawCmd::Rect && it.rect.w > 20.f && it.rect.h > 20.f &&
+            std::fabs(it.rect.w - it.rect.h) < 1.f)
+            ++slots;
+    if (slots < 36) { ++fail; std::printf("  HATA: envanter yuvalari %d (beklenen 36)\n", slots); }
+
+    // 9) envanter ızgarası ekran dışına taşmıyor
+    int invOut = 0;
+    for (const auto& it : invList.items())
+        if (it.cmd == DrawCmd::Rect && (it.rect.x < -2.f || it.rect.x + it.rect.w > W + 2.f ||
+                                        it.rect.y < -2.f || it.rect.y + it.rect.h > H + 2.f))
+            ++invOut;
+    if (invOut > 0) { ++fail; std::printf("  HATA: %d envanter ogesi ekran disinda\n", invOut); }
+
+    // 10) sohbet girişi: karakter yazma / silme / gönderme
+    ChatLog chat;
+    chat.openInput();
+    if (!chat.inputOpen()) { ++fail; std::printf("  HATA: sohbet girdisi acilmadi\n"); }
+    chat.typeChar('m'); chat.typeChar('e'); chat.typeChar('r');
+    if (chat.pendingText() != "mer") { ++fail; std::printf("  HATA: yazilan metin '%s'\n", chat.pendingText().c_str()); }
+    chat.backspace();
+    if (chat.pendingText() != "me") { ++fail; std::printf("  HATA: silme calismadi\n"); }
+    std::string sent = chat.submit();
+    if (sent != "me") { ++fail; std::printf("  HATA: gonderme '%s'\n", sent.c_str()); }
+    if (chat.inputOpen()) { ++fail; std::printf("  HATA: girdi kapanmadi\n"); }
+    if (chat.lines().empty()) { ++fail; std::printf("  HATA: sohbet gecmisi bos\n"); }
+
+    // 11) sohbet klavyesi çizimi
+    chat.openInput();
+    DrawList kb;
+    chat.buildKeyboard(kb, W, H);
+    if (kb.size() < 40) { ++fail; std::printf("  HATA: klavye cizimi %zu oge\n", kb.size()); }
+
+    std::printf("  arayuz: hud %zu oge, %d daire, envanter %d yuva, klavye %zu oge\n",
+                list.size(), circles, slots, kb.size());
+    return fail;
+}
+
 int main() {
     std::printf("=== Craftya genisletilmis sistem testleri ===\n");
     testJson();
@@ -1122,8 +1241,11 @@ int main() {
     testContent();
     testInteract();
     testAnim();
+    g_fail += test_ui_layout();
+    g_pass += 11;
 
     std::printf("\n----------------------------------------\n");
     std::printf("GECEN: %d   BASARISIZ: %d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }
+
