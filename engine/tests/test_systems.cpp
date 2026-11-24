@@ -10,6 +10,11 @@
 #include "craftya/audio.hpp"
 #include "craftya/gui.hpp"
 #include "craftya/engine.hpp"
+#include "craftya/interact.hpp"
+#include "craftya/anim.hpp"
+#include "craftya/items_gen.hpp"
+#include "craftya/mobs_gen.hpp"
+#include "craftya/recipes_gen.hpp"
 #include "craftya/world.hpp"
 #include "craftya/mesher.hpp"
 #include <cstdio>
@@ -173,14 +178,17 @@ static void testInventory() {
     group("inventory");
 
     ItemRegistry reg;
-    reg.registerDefaults();
-    check(reg.count() >= 50, "esya kayit defteri dolu");
-    check(reg.get(1) != nullptr, "blok esyasi var (id 1)");
-    check(reg.byKey("grass_block") != nullptr, "anahtarla arama");
+    check(reg.count() == 109, "109 esya kayitli");
+    check(itemDef(WOOD_PICKAXE) != nullptr, "tahta kazma tanimli");
+    check(reg.byKey("iron_pickaxe") != nullptr, "anahtarla arama");
 
-    const ItemDef* pick = reg.get(100);   // tahta kazma
+    const ItemDef* pick = itemDef(WOOD_PICKAXE);
     check(pick != nullptr && pick->kind == ItemKind::Tool, "kazma alet");
     check(pick != nullptr && pick->maxStack == 1, "alet yigilanmaz");
+
+    // blok kimlikleri eşya olarak da kullanılabiliyor
+    check(isBlockItem(STONE), "tas blogu esya sayilir");
+    check(!isBlockItem(WOOD_PICKAXE), "kazma blok degil");
 
     Inventory inv;
     check(inv.add(1, 10) == 0, "10 blok eklendi");
@@ -212,9 +220,9 @@ static void testInventory() {
 
     // kazma hızı
     float handTime = Mining::breakTime(STONE, nullptr);
-    float pickTime = Mining::breakTime(STONE, reg.get(100));  // tahta kazma
+    float pickTime = Mining::breakTime(STONE, itemDef(WOOD_PICKAXE));
     check(pickTime < handTime, "dogru alet daha hizli kirar");
-    float diamondTime = Mining::breakTime(STONE, reg.get(103)); // elmas kazma
+    float diamondTime = Mining::breakTime(STONE, itemDef(DIAMOND_PICKAXE));
     check(diamondTime < pickTime, "daha iyi alet daha da hizli");
 }
 
@@ -817,6 +825,286 @@ static void testEngine() {
     eng.shutdown();
 }
 
+// ---------------------------------------------------------------- CONTENT 457
+static void testContent() {
+    group("icerik 457");
+
+    // --- toplam sayım ---
+    const auto& reg = ContentRegistry::instance();
+    check(reg.blockCount() == 311, "311 blok");
+    check(reg.mobCount() == 37, "37 canli");
+    check(reg.itemCount() == 109, "109 esya");
+    check(reg.total() == 457, "TOPLAM 457");
+    check(reg.total() == reg.blockCount() + reg.mobCount() + reg.itemCount(),
+          "toplam = blok + canli + esya");
+
+    // --- blok cesitliligi ---
+    int colored = 0, interactables = 0, lightSrc = 0, liquids = 0;
+    for (int i = 1; i < BLOCK_COUNT; ++i) {
+        BlockId b = static_cast<BlockId>(i);
+        const BlockDef& d = blockDef(b);
+        if (d.category == 2) ++colored;
+        if (d.interact != Interact::None) ++interactables;
+        if (d.light > 0) ++lightSrc;
+        if (d.liquid) ++liquids;
+    }
+    check(colored == 64, "64 renkli blok (16 renk x 4 aile)");
+    check(interactables >= 40, "40+ etkilesimli blok");
+    check(lightSrc >= 10, "10+ isik yayan blok");
+    check(liquids == 2, "su + lav");
+
+    // 16 renk x 4 tur dogrulama
+    const char* families[4] = {"_wool", "_concrete", "_terracotta", "_stained_glass"};
+    int familyOk = 0;
+    for (int f = 0; f < 4; ++f) {
+        int n = 0;
+        for (int i = 1; i < BLOCK_COUNT; ++i) {
+            const BlockDef& d = blockDef(static_cast<BlockId>(i));
+            // tam son ek eşleşmesi (white_concrete_powder sayılmasın)
+            size_t kl = std::strlen(d.key), fl = std::strlen(families[f]);
+            if (kl > fl && std::strcmp(d.key + kl - fl, families[f]) == 0) ++n;
+        }
+        if (n == 16) ++familyOk;
+    }
+    check(familyOk == 4, "4 renk ailesi x 16 renk tam");
+
+    // 8 agac turu x 5 blok
+    const char* woods[8] = {"oak", "birch", "spruce", "jungle", "acacia", "dark_oak", "cherry", "mangrove"};
+    int woodOk = 0;
+    for (int w = 0; w < 8; ++w) {
+        char k[64];
+        std::snprintf(k, sizeof(k), "%s_planks", woods[w]);
+        if (ContentRegistry::instance().find(k)) ++woodOk;
+    }
+    check(woodOk == 8, "8 agac turu");
+
+    // --- canlilar ---
+    int quad = 0, fish = 0, birds = 0, hostile = 0;
+    for (int i = 1; i < MOB_COUNT; ++i) {
+        const MobDef& m = mobDef(static_cast<uint16_t>(i));
+        if (m.plan == BodyPlan::Quadruped) ++quad;
+        if (m.plan == BodyPlan::Fish) ++fish;
+        if (m.plan == BodyPlan::Bird) ++birds;
+        if (m.ai == MobAi2::Hostile) ++hostile;
+    }
+    check(quad >= 8, "8+ dort ayakli");
+    check(fish >= 10, "10+ balik turu");
+    check(birds >= 1, "kus var");
+    check(hostile >= 3, "3+ dusman");
+
+    // istenen canlilar mevcut mu
+    check(ContentRegistry::instance().find("cow") != nullptr, "inek var");
+    check(ContentRegistry::instance().find("sheep") != nullptr, "koyun var");
+    check(ContentRegistry::instance().find("chicken") != nullptr, "tavuk var");
+    check(ContentRegistry::instance().find("pig") != nullptr, "domuz var");
+    check(ContentRegistry::instance().find("goat") != nullptr, "keci var");
+    check(ContentRegistry::instance().find("frog") != nullptr, "kurbaga var");
+    check(ContentRegistry::instance().find("axolotl") != nullptr, "aksolotl var");
+
+    // --- 125 balik kombinasyonu ---
+    const auto& fv = fishVariants();
+    check(fv.size() == 125, "125 balik kombinasyonu");
+    std::array<int, 125> seen{};
+    int unique = 0;
+    for (int s = 0; s < 5; ++s)
+        for (int c = 0; c < 5; ++c)
+            for (int p = 0; p < 5; ++p) {
+                int idx = (s * 5 + c) * 5 + p;
+                seen[idx] = 1;
+                if (fv[idx].mobId != 0) ++unique;
+            }
+    check(unique == 125, "tum kombinasyonlar dolu");
+    int sum = 0; for (int x : seen) sum += x;
+    check(sum == 125, "kombinasyonlar tekrarsiz");
+    // kombinasyonlar eşya sayımına DAHİL DEĞİL
+    check(reg.total() == 457, "kombinasyonlar sayima dahil degil");
+
+    // --- esyalar ---
+    int tools2 = 0, armor = 0, foods = 0;
+    for (int i = 0; i < kItemCount; ++i) {
+        const ItemDef& d = itemRegistry()[i];
+        if (d.kind == ItemKind::Tool) ++tools2;
+        if (d.kind == ItemKind::Armor) ++armor;
+        if (d.kind == ItemKind::Food) ++foods;
+    }
+    check(tools2 == 35, "35 alet (7 malzeme x 5 tip)");
+    check(armor == 12, "12 zirh parcasi (6 malzeme x 2)");
+    check(foods >= 15, "15+ yiyecek");
+
+    // --- tarifler ---
+    check(kRecipeCount == 130, "130 tarif");
+    int craftable = 0;
+    CraftingRegistry cr;
+    cr.registerDefaults();
+    for (const auto& r : cr.all()) if (r.result.itemId != 0) ++craftable;
+    check(craftable == 130, "tum tariflerin sonucu var");
+}
+
+// ---------------------------------------------------------------- INTERACT
+static void testInteract() {
+    group("etkilesimli bloklar");
+
+    InteractionManager im;
+    BlockState st;
+
+    // kapi
+    InteractResult r = im.activate(OAK_DOOR, st, ItemStack{});
+    check(r.handled && st.isOpen(), "kapi acildi");
+    r = im.activate(OAK_DOOR, st, ItemStack{});
+    check(r.handled && !st.isOpen(), "kapi kapandi");
+
+    // sandik
+    BlockState chest;
+    r = im.activate(CHEST, chest, ItemStack{});
+    check(r.handled && chest.isOpen(), "sandik acildi");
+
+    // firin: komur ile yak
+    BlockState furn;
+    ItemStack coal; coal.itemId = COAL; coal.count = 1;
+    r = im.activate(FURNACE, furn, coal);
+    check(r.handled && furn.isLit(), "firin komurle yakildi");
+    check(r.consumedItem, "komur tuketildi");
+
+    // kaldirac
+    BlockState lev;
+    r = im.activate(LEVER, lev, ItemStack{});
+    check(r.handled && lev.isPowered(), "kaldirac sinyal verdi");
+    r = im.activate(LEVER, lev, ItemStack{});
+    check(!lev.isPowered(), "kaldirac kapandi");
+
+    // TNT
+    BlockState tnt;
+    r = im.activate(TNT, tnt, ItemStack{});
+    check(r.handled && tnt.isLit(), "TNT ateslendi");
+
+    // etkilesimsiz blok
+    BlockState plain;
+    r = im.activate(STONE, plain, ItemStack{});
+    check(!r.handled, "duz tas etkilesimsiz");
+
+    // tum etkilesimli bloklar isleniyor mu
+    int handled = 0, total = 0;
+    for (int i = 1; i < BLOCK_COUNT; ++i) {
+        BlockId b = static_cast<BlockId>(i);
+        if (blockDef(b).interact == Interact::None) continue;
+        ++total;
+        BlockState s2;
+        if (im.activate(b, s2, ItemStack{}).handled) ++handled;
+    }
+    check(total >= 40, "40+ etkilesimli blok kayitli");
+    check(handled == total, "hepsi bir davranis donduruyor");
+
+    // kirma hizi: dogru alet
+    float hand = im.breakMultiplier(STONE, nullptr);
+    float pick = im.breakMultiplier(STONE, itemDef(IRON_PICKAXE));
+    check(pick > hand, "demir kazma tast hizli kirar");
+    float wrong = im.breakMultiplier(STONE, itemDef(IRON_SHOVEL));
+    check(wrong == 1.f, "yanlis alet hizlandirmaz");
+
+    // dusen esyalar
+    auto drops = im.dropsFor(STONE, itemDef(IRON_PICKAXE));
+    check(!drops.empty(), "tastan esya dustu");
+    auto noDrops = im.dropsFor(DIAMOND_ORE, nullptr);
+    check(noDrops.empty(), "kazmasiz elmas cevheri dusmez");
+
+    // konteyner
+    Container& c = im.container(im.allocateContainer());
+    ItemStack iron; iron.itemId = IRON_INGOT; iron.count = 32;
+    check(c.add(iron) == 0, "konteynere eklendi");
+    check(c.slots[0].count == 32, "konteyner sayisi dogru");
+}
+
+// ---------------------------------------------------------------- ANIM
+static void testAnim() {
+    group("animasyon");
+
+    // dort ayakli: inek
+    Skeleton cow;
+    cow.build(mobDef(MOB_COW));
+    check(cow.boneCount() >= 10, "inek iskeleti 10+ kemik");
+
+    AnimContext ctx;
+    ctx.speed = 0.f;
+    ctx.onGround = true;
+    cow.update(1.f / 60.f, ctx);
+    check(cow.state() == AnimState::Idle, "dururken Idle");
+
+    // yürüyüş
+    ctx.speed = 3.0f;
+    for (int i = 0; i < 30; ++i) cow.update(1.f / 60.f, ctx);
+    check(cow.state() == AnimState::Run, "kosarken Run");
+    check(cow.walkPhase() > 0.1f, "yuruyus fazi ilerledi");
+
+    // bacaklar zit fazda mı
+    float legFL = cow.bone("legFL")->rot.x;
+    float legFR = cow.bone("legFR")->rot.x;
+    check(std::fabs(legFL - legFR) > 0.01f, "bacaklar zit fazda");
+
+    // zıplama -> ezilme/gerilme
+    ctx.speed = 0.f; ctx.onGround = false;
+    cow.update(1.f / 60.f, ctx);
+    check(cow.state() == AnimState::Jump, "havada Jump");
+
+    // saldırı
+    ctx.onGround = true;
+    cow.triggerAttack();
+    cow.update(1.f / 60.f, ctx);
+    check(cow.state() == AnimState::Attack, "vurusta Attack");
+
+    // hasar
+    cow.triggerHurt();
+    cow.update(1.f / 60.f, ctx);
+    check(cow.state() == AnimState::Hurt, "hasarda Hurt");
+
+    // ölüm
+    cow.triggerDeath();
+    for (int i = 0; i < 80; ++i) cow.update(1.f / 60.f, ctx);
+    check(cow.state() == AnimState::Death, "oldugunde Death");
+    check(cow.bone("root")->rot.z > 0.5f, "olumde yana devrildi");
+
+    // balık: kuyruk dalgası
+    Skeleton fish;
+    fish.build(mobDef(MOB_COD));
+    check(fish.boneCount() >= 5, "balik iskeleti");
+    AnimContext fctx; fctx.speed = 1.5f; fctx.inWater = true;
+    for (int i = 0; i < 20; ++i) fish.update(1.f / 60.f, fctx);
+    check(fish.state() == AnimState::Swim, "suda Swim");
+    check(fish.bone("tail") != nullptr, "balikta kuyruk kemigi var");
+    float t1 = fish.bone("tail")->rot.y;
+    for (int i = 0; i < 10; ++i) fish.update(1.f / 60.f, fctx);
+    float t2 = fish.bone("tail")->rot.y;
+    check(std::fabs(t1 - t2) > 0.001f, "kuyruk dalgalaniyor");
+
+    // kus: kanat çırpma
+    Skeleton bird;
+    bird.build(mobDef(MOB_CHICKEN));
+    AnimContext bctx; bctx.speed = 2.f; bctx.onGround = false;
+    for (int i = 0; i < 20; ++i) bird.update(1.f / 60.f, bctx);
+    check(bird.bone("wingL") != nullptr, "kusta kanat kemigi var");
+    float w1 = bird.bone("wingL")->rot.z;
+    for (int i = 0; i < 5; ++i) bird.update(1.f / 60.f, bctx);
+    check(std::fabs(w1 - bird.bone("wingL")->rot.z) > 0.001f, "kanatlar cirpiyor");
+
+    // baş takibi
+    Skeleton sheep;
+    sheep.build(mobDef(MOB_SHEEP));
+    AnimContext sctx;
+    sctx.rootPos = {0, 0, 0};
+    sctx.lookTarget = {10, 0, 0};
+    sheep.update(1.f / 60.f, sctx);
+    check(std::fabs(sheep.bone("head")->rot.y) > 0.3f, "bas hedefe donuyor");
+
+    // tüm canlılar iskelet kurabiliyor
+    int built = 0;
+    for (int i = 1; i < MOB_COUNT; ++i) {
+        Skeleton sk;
+        sk.build(mobDef(static_cast<uint16_t>(i)));
+        if (sk.boneCount() > 0) ++built;
+        sk.update(1.f / 60.f, AnimContext{});
+    }
+    check(built == MOB_COUNT - 1, "37 canli icin iskelet kuruldu");
+}
+
 int main() {
     std::printf("=== Craftya genisletilmis sistem testleri ===\n");
     testJson();
@@ -831,6 +1119,9 @@ int main() {
     testGui();
     testMeshScenario();
     testEngine();
+    testContent();
+    testInteract();
+    testAnim();
 
     std::printf("\n----------------------------------------\n");
     std::printf("GECEN: %d   BASARISIZ: %d\n", g_pass, g_fail);

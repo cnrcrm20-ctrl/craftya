@@ -23,6 +23,8 @@ engine/src/audio.cpp
 engine/src/net.cpp
 engine/src/save.cpp
 engine/src/gui.cpp
+engine/src/interact.cpp
+engine/src/anim.cpp
 engine/src/ecs.cpp
 "
 
@@ -48,7 +50,7 @@ $CXX $FLAGS engine/tests/test_systems.cpp \
      engine/src/ecs.cpp engine/src/audio.cpp engine/src/gui.cpp \
      engine/src/mesher.cpp engine/src/physics.cpp engine/src/engine.cpp \
      engine/src/game.cpp engine/src/render.cpp engine/src/renderer.cpp \
-     engine/src/platform.cpp -o build/craftya_sys_test
+     engine/src/platform.cpp engine/src/interact.cpp engine/src/anim.cpp -o build/craftya_sys_test
 
 echo "▸ ASCII görüntüleyici derleniyor…"
 $CXX $FLAGS apps/desktop/viewer.cpp $SRC -o build/craftya_viewer

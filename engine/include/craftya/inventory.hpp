@@ -1,41 +1,42 @@
 // Craftya Engine — item, envanter, hotbar, crafting
 #pragma once
 #include "craftya/core.hpp"
+#include "craftya/items_gen.hpp"
+#include "craftya/recipes_gen.hpp"
 #include <array>
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <cstring>
 
 namespace craftya {
 
-// ---------- item ----------
-enum class ItemKind : uint8_t { Block, Tool, Material, Food, Special };
+// ItemDef / ItemKind / ItemId artık items_gen.hpp'den geliyor (109 eşya).
+// Uyumluluk için alan adları:
+inline std::string itemName(uint16_t id) {
+    const ItemDef* d = itemDef(id);
+    return d ? std::string(d->name) : std::string("?");
+}
+inline int itemMaxStack(uint16_t id) {
+    const ItemDef* d = itemDef(id);
+    return d ? d->maxStack : 64;
+}
+// blok item'ı mı? (id 1..310 blok kimliğidir)
+inline bool isBlockItem(uint16_t id) { return id > 0 && id < BLOCK_COUNT; }
 
-struct ItemDef {
-    uint16_t id = 0;
-    std::string key;
-    std::string displayName;
-    ItemKind kind = ItemKind::Material;
-    int blockId = -1;        // ItemKind::Block ise hangi blok
-    int texIndex = 0;        // envanter ikonu (atlas indeksi)
-    int maxStack = 64;
-    float damage = 0.f;      // araç/silah hasarı
-    float durability = 0.f;  // 0 = dayanıklılık yok
-    std::string toolType;    // "pickaxe", "axe", "shovel", "sword"
-    int toolTier = 0;        // 0=el, 1=tahta, 2=taş, 3=demir, 4=elmas
-};
-
+// basit anahtar arama (109 eşya için lineer tarama yeterli: ~109 karşılaştırma)
 class ItemRegistry {
 public:
-    void registerDefaults();
-    void add(const ItemDef& def);
-    const ItemDef* get(uint16_t id) const;
-    const ItemDef* byKey(const std::string& key) const;
-    size_t count() const { return items_.size(); }
-
-private:
-    std::vector<ItemDef> items_;
-    std::unordered_map<std::string, uint16_t> byKey_;
+    void registerDefaults() {}
+    const ItemDef* get(uint16_t id) const { return itemDef(id); }
+    const ItemDef* byKey(const std::string& key) const {
+        const auto& reg = itemRegistry();
+        for (const auto& d : reg) if (key == d.key) return &d;
+        return nullptr;
+    }
+    const ItemDef* blockAsItem(BlockId) const { return nullptr; }
+    static const ItemDef* blockInfo(BlockId b) { (void)b; return nullptr; }
+    size_t count() const { return static_cast<size_t>(kItemCount); }
 };
 
 // ---------- yığın ----------
@@ -138,34 +139,32 @@ struct CraftingGrid {
 // ---------- kırma süresi (araç + sertlik) ----------
 class Mining {
 public:
-    // sertlik → saniye cinsinden kırma süresi
+    // sertlik → saniye cinsinden kırma süresi (doku stiline göre doğru alet)
     static float breakTime(BlockId block, const ItemDef* tool) {
         const BlockDef& bd = blockDef(block);
         if (bd.hardness >= 9999.f) return 1e9f;   // ana kaya kırılamaz
         float base = bd.hardness * 1.5f;
-        if (!tool) return base;
+        if (!tool || !tool->toolType[0]) return base;
 
-        bool correctTool = !bd.hardness || true;
-        // blok için doğru araç tipi
-        std::string want;
-        switch (block) {
-            case STONE: case COBBLE: case BRICKS: case STONE_BRICKS:
-            case COAL_ORE: case IRON_ORE: case GOLD_ORE: case DIAMOND_ORE:
-            case OBSIDIAN: case FURNACE: case ICE:
+        // blok dokusuna göre istenen alet türü
+        const char* want = "";
+        switch (bd.style) {
+            case kStyle_stone: case kStyle_cobble: case kStyle_brick:
+            case kStyle_ore: case kStyle_smooth: case kStyle_metal:
+            case kStyle_speckle: case kStyle_gem:
                 want = "pickaxe"; break;
-            case OAK_LOG: case BIRCH_LOG: case OAK_PLANKS: case BIRCH_PLANKS:
-            case CHEST: case CRAFTING_TABLE:
+            case kStyle_log: case kStyle_plank: case kStyle_books: case kStyle_door:
                 want = "axe"; break;
-            case DIRT: case GRASS: case SAND: case GRAVEL: case SNOW:
+            case kStyle_noise: case kStyle_grass: case kStyle_grain:
                 want = "shovel"; break;
+            case kStyle_cross: case kStyle_leaves: case kStyle_wool:
+                want = "sword"; break;
             default: want = ""; break;
         }
-        if (!want.empty() && tool->toolType == want) {
-            float tierBonus = 1.f + tool->toolTier * 0.6f;
-            correctTool = true;
+        if (want[0] && std::strcmp(tool->toolType, want) == 0) {
+            float tierBonus = 1.f + static_cast<float>(tool->toolTier) * 0.6f;
             base /= tierBonus;
         }
-        (void)correctTool;
         return base < 0.05f ? 0.05f : base;
     }
 

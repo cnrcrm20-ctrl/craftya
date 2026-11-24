@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cmath>
 #include <random>
+#include <cmath>
 #include <fstream>
 
 namespace craftya {
@@ -111,261 +112,334 @@ Atlas::Atlas() : img_(SIZE, SIZE) {
     img_.fill(255, 0, 255);   // magenta = eksik doku (kolay teşhis)
 }
 
-int Atlas::tileForBlock(BlockId id, int face) {
-    // doku indeksi = blok id (0-30), üst/yan/alt için 3 ayrı karo
-    int base = static_cast<int>(id) * 3;
-    int f = (face < 0 || face > 2) ? 1 : face;
-    return base + f;
-}
-
+// ---------------- stile dayalı doku üretici ----------------
 namespace {
-// yardımcı: gürültülü doku
-void noiseTile(Image& atlas, int tileIndex, uint8_t r, uint8_t g, uint8_t b,
-               int variation, std::mt19937& rng) {
-    int tx = (tileIndex % Atlas::GRID) * Atlas::TILE;
-    int ty = (tileIndex / Atlas::GRID) * Atlas::TILE;
-    std::uniform_int_distribution<int> d(-variation, variation);
+inline void put(Image& a, int tx, int ty, int x, int y, int r, int g, int b, int alpha = 255) {
+    auto cl = [](int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); };
+    a.set(tx + x, ty + y, (uint8_t)cl(r), (uint8_t)cl(g), (uint8_t)cl(b), (uint8_t)alpha);
+}
+inline void unpack(uint32_t c, int& r, int& g, int& b) {
+    r = (c >> 16) & 0xFF; g = (c >> 8) & 0xFF; b = c & 0xFF;
+}
+// yalnızca bu kareyi saydam yapar (atlasın tamamını DEĞİL)
+inline void clearTile(Image& a, int tx, int ty) {
     for (int y = 0; y < Atlas::TILE; ++y)
-        for (int x = 0; x < Atlas::TILE; ++x) {
-            int dr = d(rng), dg = d(rng), db = d(rng);
-            auto clamp = [](int v) { return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); };
-            atlas.set(tx + x, ty + y, clamp(r + dr), clamp(g + dg), clamp(b + db));
-        }
+        for (int x = 0; x < Atlas::TILE; ++x)
+            a.set(tx + x, ty + y, 0, 0, 0, 0);
+}
 }
 
-// yardımcı: yatay çizgili doku (kütük, tahta)
-void grainTile(Image& atlas, int tileIndex, uint8_t r, uint8_t g, uint8_t b,
-               bool vertical, std::mt19937& rng) {
-    int tx = (tileIndex % Atlas::GRID) * Atlas::TILE;
-    int ty = (tileIndex / Atlas::GRID) * Atlas::TILE;
-    std::uniform_int_distribution<int> d(-14, 14);
-    for (int y = 0; y < Atlas::TILE; ++y) {
-        int lineDark = ((vertical ? y : 0) % 4 == 0) ? -22 : 0;
-        for (int x = 0; x < Atlas::TILE; ++x) {
-            int extra = ((!vertical && x % 5 == 0) ? -18 : 0);
-            int dr = d(rng) + lineDark + extra;
-            int dg = d(rng) + lineDark + extra;
-            int db = d(rng) + lineDark + extra;
-            auto clamp = [](int v) { return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); };
-            atlas.set(tx + x, ty + y, clamp(r + dr), clamp(g + dg), clamp(b + db));
+bool Atlas::drawStyled(int tileIndex, BlockId id, int face) {
+    const BlockDef& d = blockDef(id);
+    int tx = (tileIndex % GRID) * TILE;
+    int ty = (tileIndex / GRID) * TILE;
+    if (id == AIR) { clearTile(img_, tx, ty); return true; }
+    uint32_t pc = (face == 0 && d.topColor) ? d.topColor : d.color;
+    int R, G, B; unpack(pc, R, G, B);
+
+    std::mt19937 rng(static_cast<uint32_t>(tileIndex) * 2654435761u + 0x9e3779b9u);
+    std::uniform_int_distribution<int> jitter(-16, 16);
+    std::uniform_int_distribution<int> small(0, 15);
+
+    switch (d.style) {
+        case kStyle_stone:
+        case kStyle_noise: {
+            int v = (d.style == kStyle_noise) ? 26 : 14;
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = std::uniform_int_distribution<int>(-v, v)(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_cobble: {
+            // yuvarlak taşlar: hücre merkezinden uzaklık
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int cx = x % 8, cy = y % 8;
+                    float dist = std::sqrt(float((cx - 4) * (cx - 4) + (cy - 4) * (cy - 4)));
+                    int n = dist > 3.4f ? -34 : std::uniform_int_distribution<int>(-10, 10)(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_smooth: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = ((x == 0 || y == 0) ? -18 : 4) + small(rng) % 5;
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_brick: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int row = y / 4;
+                    int off = (row % 2) * 4;
+                    bool mortar = (y % 4 == 0) || ((x + off) % 8 == 0);
+                    int n = mortar ? -42 : std::uniform_int_distribution<int>(-8, 10)(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_speckle: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = std::uniform_int_distribution<int>(-12, 12)(rng);
+                    if (small(rng) == 0) n += 30;
+                    if (small(rng) == 1) n -= 30;
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_grain: {
+            for (int y = 0; y < TILE; ++y) {
+                int band = (y % 3 == 0) ? -20 : 0;
+                for (int x = 0; x < TILE; ++x) {
+                    int n = band + jitter(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            }
+            break;
+        }
+        case kStyle_grass: {
+            if (face == 2) {
+                for (int y = 0; y < TILE; ++y)
+                    for (int x = 0; x < TILE; ++x) {
+                        int n = jitter(rng);
+                        put(img_, tx, ty, x, y, 139 + n, 90 + n, 60 + n);
+                    }
+            } else if (face == 1) {
+                for (int y = 0; y < TILE; ++y)
+                    for (int x = 0; x < TILE; ++x) {
+                        bool grass = y < 4 + (small(rng) % 3);
+                        int n = jitter(rng) / 2;
+                        if (grass) put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                        else put(img_, tx, ty, x, y, 139 + n, 90 + n, 60 + n);
+                    }
+            } else {
+                for (int y = 0; y < TILE; ++y)
+                    for (int x = 0; x < TILE; ++x) {
+                        int n = jitter(rng);
+                        put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                    }
+            }
+            break;
+        }
+        case kStyle_log: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    if (face == 0) {   // üst: halkalar
+                        int dx = x - 8, dy = y - 8;
+                        int dist = (int)std::sqrt(float(dx * dx + dy * dy));
+                        int n = (dist % 3 == 0) ? -26 : 8;
+                        put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                    } else {           // yan: dikey damar
+                        int n = ((x % 5 == 0) ? -30 : 0) + jitter(rng) / 2;
+                        put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                    }
+                }
+            break;
+        }
+        case kStyle_plank: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    bool seam = (y % 4 == 3) || ((x + (y / 4) * 6) % 11 == 0);
+                    int n = seam ? -30 : std::uniform_int_distribution<int>(-8, 10)(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_leaves: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = std::uniform_int_distribution<int>(-26, 18)(rng);
+                    bool hole = (small(rng) < 3);
+                    if (hole) put(img_, tx, ty, x, y, 0, 0, 0, 0);
+                    else put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_wool: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = (((x + y) % 4 == 0) ? 14 : -8) + small(rng) % 6;
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_concrete: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = small(rng) % 7;
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_terracotta: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = std::uniform_int_distribution<int>(-14, 8)(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_glass: {
+            clearTile(img_, tx, ty);
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    bool border = (x == 0 || y == 0 || x == TILE - 1 || y == TILE - 1);
+                    bool shine = ((x + y) % 13 == 0) && x > 2 && y > 2;
+                    if (border) put(img_, tx, ty, x, y, R, G, B, 210);
+                    else if (shine) put(img_, tx, ty, x, y, 255, 255, 255, 90);
+                    else put(img_, tx, ty, x, y, R, G, B, 26);
+                }
+            break;
+        }
+        case kStyle_ore: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = std::uniform_int_distribution<int>(-16, 12)(rng);
+                    put(img_, tx, ty, x, y, 118 + n, 118 + n, 124 + n);
+                }
+            // cevher taneleri
+            for (int i = 0; i < 10; ++i) {
+                int x = 2 + small(rng) % 12, y = 2 + small(rng) % 12;
+                put(img_, tx, ty, x, y, R, G, B);
+                put(img_, tx, ty, x + 1, y, R * 3 / 4, G * 3 / 4, B * 3 / 4);
+                if (small(rng) % 2) put(img_, tx, ty, x, y + 1, R * 4 / 5, G * 4 / 5, B * 4 / 5);
+            }
+            break;
+        }
+        case kStyle_metal: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = ((x + y) % 8 < 2) ? 26 : std::uniform_int_distribution<int>(-8, 8)(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_gem: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int dx = std::abs(x - 8), dy = std::abs(y - 8);
+                    int facet = (dx + dy) % 5;
+                    int n = facet == 0 ? 34 : std::uniform_int_distribution<int>(-10, 10)(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_cross: {   // bitki: saydam zemin + sap
+            clearTile(img_, tx, ty);
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int dx = std::abs(x - 8);
+                    bool stem = (dx <= 1 && y > 5);
+                    bool leaf = (std::abs(y - (6 + (x % 7))) < 2) && dx < 6 && small(rng) < 9;
+                    int n = std::uniform_int_distribution<int>(-16, 14)(rng);
+                    if (stem) put(img_, tx, ty, x, y, (R * 2) / 3, (G * 2) / 3, (B * 2) / 3);
+                    else if (leaf) put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_machine: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    bool edge = (x == 0 || y == 0 || x == TILE - 1 || y == TILE - 1);
+                    bool panel = (x > 2 && x < 13 && y > 2 && y < 13 && (x % 5 == 0 || y % 5 == 0));
+                    int n = edge ? -28 : (panel ? -14 : std::uniform_int_distribution<int>(-6, 8)(rng));
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            // ön yüzde gösterge
+            if (face == 1) {
+                for (int y = 5; y < 11; ++y)
+                    for (int x = 5; x < 11; ++x)
+                        put(img_, tx, ty, x, y, 240, 180, 60);
+            }
+            break;
+        }
+        case kStyle_lamp: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = ((x % 4 == 0) || (y % 4 == 0)) ? -30 : 30;
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_lava: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int v = (int)(std::sin(x * 0.7f + y * 0.3f) * 24.f + jitter(rng));
+                    put(img_, tx, ty, x, y, R + v, G + v / 2, B + v / 3);
+                }
+            break;
+        }
+        case kStyle_liquid: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = (int)(std::sin(x * 0.5f + y * 0.9f) * 16.f);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n, 165);
+                }
+            break;
+        }
+        case kStyle_books: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    bool shelf = (y % 8 == 0 or y % 8 == 7);
+                    if (shelf) put(img_, tx, ty, x, y, R - 40, G - 40, B - 40);
+                    else {
+                        int book = x / 2;
+                        int hue = (book * 53 + (y / 8) * 31) % 5;
+                        const int cr[5] = {178, 62, 46, 92, 150};
+                        const int cg[5] = {52, 96, 140, 62, 40};
+                        const int cb[5] = {44, 58, 62, 140, 96};
+                        put(img_, tx, ty, x, y, cr[hue], cg[hue], cb[hue]);
+                    }
+                }
+            break;
+        }
+        case kStyle_door: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    bool frame = (x == 0 || x == TILE - 1 || y % 5 == 0);
+                    int n = frame ? -32 : std::uniform_int_distribution<int>(-8, 8)(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_flat: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = jitter(rng);
+                    if (y > 10) put(img_, tx, ty, x, y, R + n, G + n, B + n, 0);
+                    else put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        default: {
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = jitter(rng);
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
         }
     }
+    return true;
 }
-
-// cevher: taş zemin + renkli benekler
-void oreTile(Image& atlas, int tileIndex, uint8_t cr, uint8_t cg, uint8_t cb, std::mt19937& rng) {
-    noiseTile(atlas, tileIndex, 120, 120, 127, 18, rng);
-    int tx = (tileIndex % Atlas::GRID) * Atlas::TILE;
-    int ty = (tileIndex / Atlas::GRID) * Atlas::TILE;
-    std::uniform_int_distribution<int> pos(1, Atlas::TILE - 2);
-    for (int i = 0; i < 12; ++i) {
-        int x = pos(rng), y = pos(rng);
-        atlas.set(tx + x, ty + y, cr, cg, cb);
-        if (pos(rng) % 2) atlas.set(tx + x + 1, ty + y, (uint8_t)(cr * 0.8f), (uint8_t)(cg * 0.8f), (uint8_t)(cb * 0.8f));
-    }
-}
-} // namespace
 
 void Atlas::drawTile(int tileIndex, BlockId id, int face) {
-    std::mt19937 rng(static_cast<uint32_t>(tileIndex) * 2654435761u + static_cast<uint32_t>(id));
-    switch (id) {
-        case AIR:          img_.fill(255, 0, 255); break;
-        case STONE:        noiseTile(img_, tileIndex, 122, 122, 127, 16, rng); break;
-        case DIRT:         noiseTile(img_, tileIndex, 124, 88, 56, 20, rng); break;
-        case GRASS:
-            if (face == 0) noiseTile(img_, tileIndex, 92, 152, 62, 18, rng);
-            else if (face == 2) noiseTile(img_, tileIndex, 124, 88, 56, 20, rng);
-            else {   // yan: üstte çim şeridi
-                noiseTile(img_, tileIndex, 124, 88, 56, 20, rng);
-                int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-                std::uniform_int_distribution<int> d(0, 12);
-                for (int x = 0; x < TILE; ++x) {
-                    int h = 3 + d(rng) % 3;
-                    for (int y = 0; y < h; ++y)
-                        img_.set(tx + x, ty + y, (uint8_t)(92 + d(rng)), (uint8_t)(152 + d(rng)), 62);
-                }
-            }
-            break;
-        case COBBLE: {
-            noiseTile(img_, tileIndex, 110, 110, 115, 10, rng);
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int i = 0; i < TILE; i += 5) {
-                for (int j = 0; j < TILE; ++j) {
-                    img_.set(tx + i, ty + j, 76, 76, 80);
-                    img_.set(tx + j, ty + i, 76, 76, 80);
-                }
-            }
-            break;
-        }
-        case SAND:         noiseTile(img_, tileIndex, 219, 205, 148, 12, rng); break;
-        case GRAVEL:       noiseTile(img_, tileIndex, 128, 122, 118, 26, rng); break;
-        case OAK_LOG:
-            if (face == 0 || face == 2) noiseTile(img_, tileIndex, 160, 128, 82, 12, rng);
-            else grainTile(img_, tileIndex, 132, 100, 60, true, rng);
-            break;
-        case OAK_PLANKS:   grainTile(img_, tileIndex, 168, 136, 88, false, rng); break;
-        case OAK_LEAVES: {
-            noiseTile(img_, tileIndex, 62, 122, 48, 28, rng);
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            std::uniform_int_distribution<int> p(0, TILE - 1);
-            for (int i = 0; i < 26; ++i)
-                img_.set(tx + p(rng), ty + p(rng), 40, 88, 32);
-            break;
-        }
-        case BIRCH_LOG:
-            if (face == 0 || face == 2) noiseTile(img_, tileIndex, 216, 210, 196, 10, rng);
-            else {
-                noiseTile(img_, tileIndex, 228, 226, 214, 8, rng);
-                int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-                std::uniform_int_distribution<int> p(0, TILE - 1);
-                for (int i = 0; i < 10; ++i) {
-                    int x = p(rng), y = p(rng);
-                    img_.set(tx + x, ty + y, 60, 60, 58);
-                    img_.set(tx + x, ty + y + 1, 60, 60, 58);
-                }
-            }
-            break;
-        case BIRCH_PLANKS: grainTile(img_, tileIndex, 216, 204, 168, false, rng); break;
-        case WATER: {
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int y = 0; y < TILE; ++y)
-                for (int x = 0; x < TILE; ++x) {
-                    float w = std::sin((x + y * 0.5f) * 0.7f) * 0.5f + 0.5f;
-                    img_.set(tx + x, ty + y,
-                        (uint8_t)(44 + w * 18), (uint8_t)(98 + w * 26), (uint8_t)(190 + w * 30), 170);
-                }
-            break;
-        }
-        case LAVA: {
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int y = 0; y < TILE; ++y)
-                for (int x = 0; x < TILE; ++x) {
-                    float w = std::sin((x * 0.8f + y * 1.3f)) * 0.5f + 0.5f;
-                    img_.set(tx + x, ty + y,
-                        (uint8_t)(210 + w * 45), (uint8_t)(88 + w * 70), 24);
-                }
-            break;
-        }
-        case GLASS: {
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int y = 0; y < TILE; ++y)
-                for (int x = 0; x < TILE; ++x) {
-                    bool border = (x == 0 || y == 0 || x == TILE-1 || y == TILE-1);
-                    if (border) img_.set(tx + x, ty + y, 200, 225, 235, 220);
-                    else if ((x + y) % 9 == 0) img_.set(tx + x, ty + y, 225, 240, 250, 90);
-                    else img_.set(tx + x, ty + y, 210, 235, 245, 40);
-                }
-            break;
-        }
-        case BRICKS: {
-            noiseTile(img_, tileIndex, 150, 72, 58, 12, rng);
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int y = 0; y < TILE; ++y)
-                for (int x = 0; x < TILE; ++x) {
-                    bool mortar = (y % 5 == 0) || ((x + (y / 5) * 4) % 8 == 0);
-                    if (mortar) img_.set(tx + x, ty + y, 186, 178, 168);
-                }
-            break;
-        }
-        case STONE_BRICKS: {
-            noiseTile(img_, tileIndex, 126, 126, 130, 12, rng);
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int y = 0; y < TILE; ++y)
-                for (int x = 0; x < TILE; ++x) {
-                    if (y % 8 == 0 || ((x + (y / 8) * 8) % 16 == 0))
-                        img_.set(tx + x, ty + y, 96, 96, 100);
-                }
-            break;
-        }
-        case COAL_ORE:     oreTile(img_, tileIndex, 38, 38, 42, rng); break;
-        case IRON_ORE:     oreTile(img_, tileIndex, 196, 160, 128, rng); break;
-        case GOLD_ORE:     oreTile(img_, tileIndex, 240, 202, 72, rng); break;
-        case DIAMOND_ORE:  oreTile(img_, tileIndex, 96, 226, 226, rng); break;
-        case SNOW:         noiseTile(img_, tileIndex, 244, 248, 252, 6, rng); break;
-        case ICE: {
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int y = 0; y < TILE; ++y)
-                for (int x = 0; x < TILE; ++x) {
-                    float w = std::sin(x * 0.6f) * std::cos(y * 0.7f) * 0.5f + 0.5f;
-                    img_.set(tx + x, ty + y, (uint8_t)(170 + w * 40), (uint8_t)(210 + w * 35), 245, 200);
-                }
-            break;
-        }
-        case OBSIDIAN: {
-            noiseTile(img_, tileIndex, 34, 24, 54, 10, rng);
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            std::uniform_int_distribution<int> p(0, TILE - 1);
-            for (int i = 0; i < 8; ++i)
-                img_.set(tx + p(rng), ty + p(rng), 96, 70, 140);
-            break;
-        }
-        case NETHERRACK:   noiseTile(img_, tileIndex, 122, 56, 54, 22, rng); break;
-        case GLOWSTONE: {
-            noiseTile(img_, tileIndex, 232, 198, 108, 16, rng);
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            std::uniform_int_distribution<int> p(0, TILE - 1);
-            for (int i = 0; i < 14; ++i)
-                img_.set(tx + p(rng), ty + p(rng), 255, 236, 160);
-            break;
-        }
-        case TORCH: {
-            // küçük dikey çubuk (ortada), gerisi saydam
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int y = 0; y < TILE; ++y)
-                for (int x = 0; x < TILE; ++x) {
-                    bool stick = (x >= 7 && x <= 8 && y >= 6);
-                    bool flame = (x >= 6 && x <= 9 && y >= 3 && y <= 6);
-                    if (flame) img_.set(tx + x, ty + y, 255, 208, 84);
-                    else if (stick) img_.set(tx + x, ty + y, 138, 102, 60);
-                    else img_.set(tx + x, ty + y, 0, 0, 0, 0);
-                }
-            break;
-        }
-        case CRAFTING_TABLE:
-            if (face == 0) {
-                grainTile(img_, tileIndex, 168, 136, 88, false, rng);
-                int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-                for (int i = 2; i < TILE - 2; i += 4)
-                    for (int j = 2; j < TILE - 2; ++j) {
-                        img_.set(tx + i, ty + j, 96, 72, 44);
-                        img_.set(tx + j, ty + i, 96, 72, 44);
-                    }
-            } else grainTile(img_, tileIndex, 148, 116, 72, true, rng);
-            break;
-        case FURNACE:
-            if (face == 1) {
-                noiseTile(img_, tileIndex, 110, 110, 114, 12, rng);
-                int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-                for (int y = 6; y < 12; ++y)
-                    for (int x = 3; x < 13; ++x)
-                        img_.set(tx + x, ty + y, 40, 36, 34);
-                for (int x = 5; x < 11; ++x)
-                    img_.set(tx + x, ty + 11, 214, 120, 40);
-            } else noiseTile(img_, tileIndex, 118, 118, 122, 14, rng);
-            break;
-        case CHEST: {
-            grainTile(img_, tileIndex, 152, 110, 62, false, rng);
-            int tx = (tileIndex % GRID) * TILE, ty = (tileIndex / GRID) * TILE;
-            for (int y = 0; y < TILE; ++y) {
-                img_.set(tx + 0, ty + y, 96, 68, 36);
-                img_.set(tx + TILE - 1, ty + y, 96, 68, 36);
-            }
-            for (int x = 6; x < 10; ++x)
-                for (int y = 7; y < 10; ++y)
-                    img_.set(tx + x, ty + y, 226, 190, 74);
-            break;
-        }
-        case BEDROCK:      noiseTile(img_, tileIndex, 54, 54, 58, 30, rng); break;
-        default:           noiseTile(img_, tileIndex, 140, 140, 145, 20, rng); break;
-    }
+    drawStyled(tileIndex, id, face);
 }
 
 void Atlas::generateProcedural(uint64_t seed) {
     (void)seed;
-    for (int id = 0; id < BLOCK_COUNT; ++id) {
+    img_.fill(255, 0, 255);
+    for (int id = 1; id < BLOCK_COUNT; ++id) {
         for (int face = 0; face < 3; ++face) {
             int tile = tileForBlock(static_cast<BlockId>(id), face);
-            drawTile(tile, static_cast<BlockId>(id), face);
+            if (tile >= GRID * GRID) break;
+            drawStyled(tile, static_cast<BlockId>(id), face);
         }
     }
 }

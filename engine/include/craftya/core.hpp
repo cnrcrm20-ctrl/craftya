@@ -7,6 +7,8 @@
 #include <vector>
 #include <array>
 
+#include "craftya/blocks_gen.hpp"
+
 namespace craftya {
 
 // ---------- sabitler ----------
@@ -49,74 +51,5 @@ struct Vec3f {
     }
 };
 
-// ---------- blok kimlikleri (Supabase block_types ile aynı) ----------
-enum BlockId : uint16_t {
-    AIR = 0, STONE = 1, DIRT = 2, GRASS = 3, COBBLE = 4, SAND = 5, GRAVEL = 6,
-    OAK_LOG = 7, OAK_PLANKS = 8, OAK_LEAVES = 9, BIRCH_LOG = 10, BIRCH_PLANKS = 11,
-    WATER = 12, LAVA = 13, GLASS = 14, BRICKS = 15, STONE_BRICKS = 16,
-    COAL_ORE = 17, IRON_ORE = 18, GOLD_ORE = 19, DIAMOND_ORE = 20,
-    SNOW = 21, ICE = 22, OBSIDIAN = 23, NETHERRACK = 24, GLOWSTONE = 25,
-    TORCH = 26, CRAFTING_TABLE = 27, FURNACE = 28, CHEST = 29, BEDROCK = 30,
-    BLOCK_COUNT = 31
-};
-
-// ---------- blok özellikleri (sunucudan gelen JSON'un derleme zamanı kopyası) ----------
-struct BlockDef {
-    BlockId id;
-    const char* key;
-    const char* name;
-    bool opaque;    // ışığı keser, komşu yüz gizlenir
-    bool solid;     // çarpışma var
-    bool liquid;
-    uint8_t light;  // kendi yaydığı ışık (0-15)
-    float hardness;
-};
-
-inline const std::array<BlockDef, BLOCK_COUNT>& blockRegistry() {
-    static const std::array<BlockDef, BLOCK_COUNT> reg = {{
-        {AIR,           "air",           "Hava",            false, false, false,  0,   0.0f},
-        {STONE,         "stone",         "Taş",             true,  true,  false,  0,   1.5f},
-        {DIRT,          "dirt",          "Toprak",          true,  true,  false,  0,   0.5f},
-        {GRASS,         "grass_block",   "Çim",             true,  true,  false,  0,   0.6f},
-        {COBBLE,        "cobblestone",   "Arnavut",         true,  true,  false,  0,   2.0f},
-        {SAND,          "sand",          "Kum",             true,  true,  false,  0,   0.5f},
-        {GRAVEL,        "gravel",        "Çakıl",           true,  true,  false,  0,   0.6f},
-        {OAK_LOG,       "oak_log",       "Meşe Kütük",      true,  true,  false,  0,   2.0f},
-        {OAK_PLANKS,    "oak_planks",    "Meşe Tahta",      true,  true,  false,  0,   2.0f},
-        {OAK_LEAVES,    "oak_leaves",    "Meşe Yaprak",     false, true,  false,  0,   0.2f},
-        {BIRCH_LOG,     "birch_log",     "Huş Kütük",       true,  true,  false,  0,   2.0f},
-        {BIRCH_PLANKS,  "birch_planks",  "Huş Tahta",       true,  true,  false,  0,   2.0f},
-        {WATER,         "water",         "Su",              false, false, true,   0, 100.0f},
-        {LAVA,          "lava",          "Lav",             false, false, true,  15, 100.0f},
-        {GLASS,         "glass",         "Cam",             false, true,  false,  0,   0.3f},
-        {BRICKS,        "bricks",        "Tuğla",           true,  true,  false,  0,   2.0f},
-        {STONE_BRICKS,  "stone_bricks",  "Taş Tuğla",       true,  true,  false,  0,   1.5f},
-        {COAL_ORE,      "coal_ore",      "Kömür",           true,  true,  false,  0,   3.0f},
-        {IRON_ORE,      "iron_ore",      "Demir",           true,  true,  false,  0,   3.0f},
-        {GOLD_ORE,      "gold_ore",      "Altın",           true,  true,  false,  0,   3.0f},
-        {DIAMOND_ORE,   "diamond_ore",   "Elmas",           true,  true,  false,  0,   3.0f},
-        {SNOW,          "snow",          "Kar",             true,  true,  false,  0,   0.3f},
-        {ICE,           "ice",           "Buz",             false, true,  false,  0,   0.5f},
-        {OBSIDIAN,      "obsidian",      "Obsidyen",        true,  true,  false,  0,  50.0f},
-        {NETHERRACK,    "netherrack",    "Nether Taşı",     true,  true,  false,  0,   0.4f},
-        {GLOWSTONE,     "glowstone",     "Işık Taşı",        true,  true,  false, 15,   0.3f},
-        {TORCH,         "torch",         "Meşale",          false, false, false, 14,   0.1f},
-        {CRAFTING_TABLE,"crafting_table","Tezgah",          true,  true,  false,  0,   2.5f},
-        {FURNACE,       "furnace",       "Fırın",           true,  true,  false,  0,   3.5f},
-        {CHEST,         "chest",         "Sandık",          true,  true,  false,  0,   2.5f},
-        {BEDROCK,       "bedrock",       "Ana Kaya",        true,  true,  false,  0, 99999.0f},
-    }};
-    return reg;
-}
-
-inline const BlockDef& blockDef(BlockId id) {
-    const auto& reg = blockRegistry();
-    if (id < BLOCK_COUNT) return reg[id];
-    return reg[0];
-}
-inline bool isOpaque(BlockId id)  { return blockDef(id).opaque; }
-inline bool isSolid(BlockId id)   { return blockDef(id).solid; }
-inline uint8_t blockLight(BlockId id) { return blockDef(id).light; }
-inline bool isAir(BlockId id)     { return id == AIR; }
 
 } // namespace craftya

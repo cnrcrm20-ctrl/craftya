@@ -36,8 +36,8 @@ struct Image {
 class Atlas {
 public:
     static constexpr int TILE = 16;         // doku karesi 16x16
-    static constexpr int GRID = 16;         // 16x16 kare
-    static constexpr int SIZE = TILE * GRID; // 256x256 (31 blok için fazlasıyla yeter)
+    static constexpr int GRID = 64;         // 64x64 kare = 4096 doku yuvasi
+    static constexpr int SIZE = TILE * GRID; // 1024x1024
 
     Atlas();
 
@@ -57,11 +57,16 @@ public:
     }
 
     // blok + yüz → doku indeksi (0=üst,1=yan,2=alt)
-    static int tileForBlock(BlockId id, int face);
+    static int tileForBlock(BlockId id, int face) {
+        return static_cast<int>(id) * 3 + face;
+    }
+    // sadece üst yüz (envanter ikonu, HUD)
+    static int tileForIcon(BlockId id) { return static_cast<int>(id) * 3; }
 
 private:
     Image img_;
     void drawTile(int tileIndex, BlockId id, int face);
+    bool drawStyled(int tileIndex, BlockId id, int face);
 };
 
 } // namespace craftya

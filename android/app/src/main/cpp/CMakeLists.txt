@@ -24,6 +24,8 @@ add_library(craftya SHARED
     ${ENGINE_ROOT}/src/ecs.cpp
     ${ENGINE_ROOT}/src/audio.cpp
     ${ENGINE_ROOT}/src/gui.cpp
+    ${ENGINE_ROOT}/src/interact.cpp
+    ${ENGINE_ROOT}/src/anim.cpp
 )
 
 target_include_directories(craftya PRIVATE ${ENGINE_ROOT}/include)
