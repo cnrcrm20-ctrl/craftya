@@ -68,9 +68,10 @@ void LightEngine::computeChunk(World& world, Chunk& chunk) {
                 int wy = cp.y * CHUNK_H + ly;
                 int wz = cp.z * CHUNK_W + lz;
 
-                // skylight: yukarıdan bak, ilk opak bloğa kadar 15
+                // skylight: bloğun üstünde HİÇ opak blok yoksa gökyüzü ışığı tam (15).
+                // (önceki sürüm sadece 5 blok yukarı bakıyordu → ağaç altı kapkaranlıktı)
                 bool openAbove = true;
-                for (int ay = wy + 1; ay < wy + 6 && openAbove; ++ay) {
+                for (int ay = wy + 1; ay < wy + 48 && openAbove; ++ay) {
                     BlockId above = world.getBlock(wx, ay, wz);
                     if (above != AIR && isOpaque(above)) openAbove = false;
                 }

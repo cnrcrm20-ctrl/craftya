@@ -86,9 +86,15 @@ void Mesher::build(World& world, Chunk& chunk, MeshData& out) {
                         if (!c.present) { ++ui; continue; }
                         BlockId id = c.id;
 
+                        // cutout bloklar (yaprak/bitki) BİRLEŞTİRİLMEZ:
+                        // birleşince tek doku dev kareye geriliyor.
+                        bool noMerge = (blockDef(id).style == kStyle_cross) ||
+                                       (blockDef(id).style == kStyle_leaves);
+
                         // genişlik (u yönü)
                         int w = 1;
-                        while (ui + w < dimU) {
+                        if (noMerge) { /* w=1 kalır */ }
+                        while (!noMerge && ui + w < dimU) {
                             Cell& n = mask[static_cast<size_t>(vi) * dimU + ui + w];
                             if (!n.present || n.id != id) break;
                             ++w;
@@ -96,7 +102,7 @@ void Mesher::build(World& world, Chunk& chunk, MeshData& out) {
                         // yükseklik (v yönü)
                         int h = 1;
                         bool ok = true;
-                        while (vi + h < dimV && ok) {
+                        while (!noMerge && vi + h < dimV && ok) {
                             for (int k = 0; k < w; ++k) {
                                 Cell& n = mask[static_cast<size_t>(vi + h) * dimU + ui + k];
                                 if (!n.present || n.id != id) { ok = false; break; }
@@ -152,7 +158,12 @@ void Mesher::build(World& world, Chunk& chunk, MeshData& out) {
                             {aU0,       aV1}
                         };
 
-                        bool transparentPass = !isOpaque(id);
+                        // Bitki örtüsü (cross) ve yapraklar KESKİN CUTOUT olmalı.
+                        // Alfa karışımına bırakılırsa saydam pikseller siyah kalıyor
+                        // ve zemin/leke görüntüsü oluşuyor.
+                        bool cutout = (blockDef(id).style == kStyle_cross) ||
+                                      (blockDef(id).style == kStyle_leaves);
+                        bool transparentPass = !isOpaque(id) && !cutout;
                         auto& dst = transparentPass ? out.transparent : out.opaque;
 
                         // yön parlaklığı (ucuz yüz gölgeleme)

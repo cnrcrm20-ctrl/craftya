@@ -109,6 +109,9 @@ struct Camera {
 };
 
 // ---------- chunk akışı (görüş 6 / işlem 6.5) ----------
+// arka tarafta bırakılan pay (chunk) — dönüşte yeniden yükleme takılmasını önler
+inline constexpr int UNLOAD_HYSTERESIS_CHUNKS = 2;
+
 class ChunkStreamer {
 public:
     // kameranın etrafındaki gerekli chunk listesini günceller (kamera yönü öncelikli)
@@ -117,7 +120,14 @@ public:
     // yüklü mesh'leri serbest bırakılacaklar listesine ekler
     std::vector<ChunkPos> unloadList(const Camera& cam, int viewChunks = VIEW_CHUNKS) const;
 
+    // hangi chunk'ların yüklü olduğunu bildir (unloadList bunu kullanır)
+    void setLoaded(std::unordered_set<ChunkPos, ChunkPosHash> loaded) { loaded_ = std::move(loaded); }
+    const std::unordered_set<ChunkPos, ChunkPosHash>& loaded() const { return loaded_; }
+
     static float chunkRadiusWorld() { return VIEW_CHUNKS * CHUNK_W; }
+
+private:
+    std::unordered_set<ChunkPos, ChunkPosHash> loaded_;
 };
 
 // ---------- performans sayacı ----------

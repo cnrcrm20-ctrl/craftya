@@ -21,6 +21,8 @@
 
 using namespace craftya;
 
+static constexpr uint64_t SEED = 20261124u;
+
 // ---------------- framebuffer ----------------
 struct Framebuffer {
     int w = 0, h = 0;
@@ -393,9 +395,40 @@ int main(int argc, char** argv) {
     const Image& atlas = atlasObj.image();
 
     // ---- dünya ----
-    World world(20261124u, true);
-    Game game(20261124u, true);
+    World world(SEED, true);
+    Game game(SEED, true);
     game.settings().renderChunks = 6;
+
+    // spawn: deniz seviyesinin üstünde, düz, kara bir nokta bul (spiral tarama)
+    float g_penX = 0.f, g_penZ = 0.f;
+    {
+        float bestScore = -1e9f;
+        for (int r = 0; r < 220; r += 4) {
+            for (int a = 0; a < 24; ++a) {
+                float ang = a * 6.28318f / 24.f;
+                int x = static_cast<int>(std::cos(ang) * r);
+                int z = static_cast<int>(std::sin(ang) * r);
+                auto col = world.generator().column(x, z);
+                if (col.underwater) continue;
+                if (col.height < 66 || col.height > 96) continue;
+                if (col.biome == worldgen::Biome::Ocean) continue;
+                // düzlük ölç: çevredeki yükseklik farkı
+                float hmin = 1e9f, hmax = -1e9f;
+                for (int dz = -6; dz <= 6; dz += 3)
+                    for (int dx = -6; dx <= 6; dx += 3) {
+                        float h = world.heightAt(x + dx, z + dz);
+                        hmin = std::min(hmin, h); hmax = std::max(hmax, h);
+                    }
+                float flat = -(hmax - hmin);
+                float score = flat * 3.f - static_cast<float>(r) * 0.02f;
+                if (col.biome == worldgen::Biome::Forest) score += 6.f;
+                if (score > bestScore) { bestScore = score; g_penX = (float)x; g_penZ = (float)z; }
+            }
+        }
+        std::printf("  spawn: (%.0f, %.0f)  biyom=%s  yukseklik=%.0f\n",
+                    g_penX, g_penZ, worldgen::biomeName(world.biomeAt((int)g_penX, (int)g_penZ)),
+                    world.heightAt((int)g_penX, (int)g_penZ));
+    }
 
     Framebuffer fb;
     fb.resize(W, H);
@@ -421,20 +454,28 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 8; ++i) {
         MobInst m;
         m.mobId = mobList[i];
-        m.pos = {-4.5f + (i % 4) * 3.0f, 30.f, -5.5f - (i / 4) * 2.6f};
+        m.pos = {g_penX - 4.5f + (i % 4) * 3.0f, 30.f, g_penZ - 5.5f - (i / 4) * 2.6f};
         m.yaw = 0.4f * i;
         m.phase = i * 0.7f;
         m.sk.build(mobDef(m.mobId));
         mobs.push_back(m);
     }
-    // zemini bul (moblar otursun)
+    // zemini bul (moblar otursun) — GERÇEK bloklardan oku
     for (auto& m : mobs) {
         int gx = (int)std::floor(m.pos.x), gz = (int)std::floor(m.pos.z);
-        float h = world.heightAt(gx, gz);
-        // en yüksek komşu zemin (blok üstü)
+        // chunk'ların yüklü olduğundan emin ol (yoksa getBlock AIR döner!)
+        for (int cy = 0; cy <= 6; ++cy)
+            world.getOrCreate({gx >= 0 ? gx / CHUNK_W : (gx - CHUNK_W + 1) / CHUNK_W, cy,
+                               gz >= 0 ? gz / CHUNK_W : (gz - CHUNK_W + 1) / CHUNK_W});
+        float h = 1.f;
         for (int dz = -1; dz <= 1; ++dz)
-            for (int dx = -1; dx <= 1; ++dx)
-                h = std::max(h, world.heightAt(gx + dx, gz + dz));
+            for (int dx = -1; dx <= 1; ++dx) {
+                int bx = gx + dx, bz = gz + dz;
+                for (int y = 190; y > 1; --y) {
+                    BlockId b = world.getBlock(bx, y, bz);
+                    if (b != AIR && !isLiquid(b)) { h = std::max(h, (float)y); break; }
+                }
+            }
         m.pos.y = h + 1.3f;
     }
 
@@ -467,14 +508,35 @@ int main(int argc, char** argv) {
         }
     }
 
+    // spawn çevresini ağaçlardan/bitkilerden temizle (kamera içine girmesin)
+    {
+        int r = 7;
+        for (int dz = -r; dz <= r; ++dz)
+            for (int dx = -r; dx <= r; ++dx) {
+                int bx = static_cast<int>(g_penX) + dx;
+                int bz = static_cast<int>(g_penZ) + dz;
+                for (int y = 60; y <= 120; ++y) {
+                    BlockId b = world.getBlock(bx, y, bz);
+                    if (b == AIR) continue;
+                    uint8_t st = blockDef(b).style;
+                    if (st == kStyle_cross || st == kStyle_leaves ||
+                        b == OAK_LOG || b == BIRCH_LOG || b == SPRUCE_LOG ||
+                        b == DARK_OAK_LOG || b == ACACIA_LOG)
+                        world.setBlock(bx, y, bz, AIR);
+                }
+            }
+    }
+
     // ---- mesh önbelleği: bir kez üret, sonra sadece rasterize et ----
     struct ChunkMesh { ChunkPos pos; MeshData data; };
     std::vector<ChunkMesh> meshCache;
     {
-        // kameranın dolaştığı alanı kapsayacak şekilde geniş yükle
-        for (int cz = -12; cz <= 12; ++cz)
-            for (int cx = -12; cx <= 12; ++cx)
-                for (int cy = 0; cy <= 3; ++cy) {
+        // SPAWN çevresini kapsayacak şekilde yükle (sabit 0,0 değil!)
+        int scx = static_cast<int>(std::floor(g_penX / CHUNK_W));
+        int scz = static_cast<int>(std::floor(g_penZ / CHUNK_W));
+        for (int cz = scz - 12; cz <= scz + 12; ++cz)
+            for (int cx = scx - 12; cx <= scx + 12; ++cx)
+                for (int cy = 0; cy <= 6; ++cy) {
                     ChunkPos cp{cx, cy, cz};
                     Chunk* c = world.getOrCreate(cp);
                     if (!c) continue;
@@ -499,7 +561,7 @@ int main(int argc, char** argv) {
         // ---- kamera senaryosu: mob kümesinin (0,-5) etrafında dön ----
         // 0-9 sn: uzaktan yaklaş, 9-18: yakın orbit, 18-24: geniş manzara,
         // 24-30: gündoğumu için geri çekil
-        const float penX = 0.f, penZ = -5.f;
+        const float penX = g_penX, penZ = g_penZ;
         float radius, height, yawOff;
         if (t < 9.f) {
             float k = t / 9.f;
@@ -527,12 +589,20 @@ int main(int argc, char** argv) {
         float camZ = penZ + std::cos(yawOff) * radius;
         // mob kümesine bak
         float yaw = std::atan2(penX - camX, -(penZ - camZ));
-        float groundHere = world.heightAt((int)std::floor(camX), (int)std::floor(camZ));
-        float groundPen  = world.heightAt((int)penX, (int)penZ);
+        // GERÇEK blok yüksekliği (heightAt sadece üretici tahmini — ağaç/su dahil değil)
+        auto solidTop = [&](int bx, int bz) {
+            for (int y = 190; y > 1; --y) {
+                BlockId b = world.getBlock(bx, y, bz);
+                if (b != AIR && !isLiquid(b)) return y;
+            }
+            return 1;
+        };
+        float groundHere = static_cast<float>(solidTop((int)std::floor(camX), (int)std::floor(camZ)));
+        float groundPen  = static_cast<float>(solidTop((int)penX, (int)penZ));
         for (int dz = -1; dz <= 1; ++dz)
             for (int dx = -1; dx <= 1; ++dx) {
-                groundHere = std::max(groundHere, world.heightAt((int)(camX + dx), (int)(camZ + dz)));
-                groundPen  = std::max(groundPen,  world.heightAt((int)(penX + dx), (int)(penZ + dz)));
+                groundHere = std::max(groundHere, static_cast<float>(solidTop((int)(camX + dx), (int)(camZ + dz))));
+                groundPen  = std::max(groundPen,  static_cast<float>(solidTop((int)(penX + dx), (int)(penZ + dz))));
             }
         float camY = groundHere + height;
         float eyeY = groundPen + 1.5f;
@@ -559,6 +629,10 @@ int main(int argc, char** argv) {
         float top[3] = {sky[0] * 0.78f, sky[1] * 0.84f, sky[2] * 1.05f};
         float bottom[3] = {sky[0], sky[1], sky[2]};
 
+        if (f < 2)
+            std::printf("    [dbg] f=%d cam=(%.1f,%.1f,%.1f) yaw=%.2f pitch=%.2f ground=%.1f mob0=(%.1f,%.1f,%.1f)\n",
+                        f, camX, camY, camZ, yaw, pitch, groundHere,
+                        mobs[0].pos.x, mobs[0].pos.y, mobs[0].pos.z);
         Mat4 proj = Mat4::perspective(cam.fovDeg * 3.14159265f / 180.f,
                                       static_cast<float>(W) / H, 0.08f, 400.f);
         Mat4 view = cam.view();
