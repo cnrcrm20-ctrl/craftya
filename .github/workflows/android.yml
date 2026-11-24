@@ -70,11 +70,26 @@ jobs:
           gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
             -f body="$(cat /tmp/body.md)" || true
 
+      - name: APK yerini bul
+        run: |
+          echo "== APK arama =="
+          find android -name "*.apk" -type f 2>/dev/null | tee /tmp/apks.txt
+          echo "== cikti klasoru =="
+          find android -path "*outputs*" -name "*.apk" -o -path "*outputs*" -type d 2>/dev/null | head -30
+          if [ ! -s /tmp/apks.txt ]; then
+            echo "APK BULUNAMADI"
+            find android/app/build -maxdepth 3 -type d 2>/dev/null | head -30
+            exit 1
+          fi
+          mkdir -p /tmp/apkout
+          while read -r f; do cp "$f" /tmp/apkout/; done < /tmp/apks.txt
+          ls -la /tmp/apkout
+
       - name: APK artefakt
         uses: actions/upload-artifact@v4
         with:
           name: craftya-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: /tmp/apkout/*.apk
           if-no-files-found: error
 
       - name: Release olustur
@@ -83,8 +98,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "v0.2.${{ github.run_number }}" \
-            android/app/build/outputs/apk/release/*.apk \
+            /tmp/apkout/*.apk \
             --title "Craftya 0.2.${{ github.run_number }}" \
             --notes "Otomatik derleme · ${{ github.sha }}" || \
           gh release upload "v0.2.${{ github.run_number }}" \
-            android/app/build/outputs/apk/release/*.apk --clobber
+            /tmp/apkout/*.apk --clobber
