@@ -36,7 +36,14 @@ add_library(craftya SHARED
 
 target_include_directories(craftya PRIVATE ${ENGINE_DIR}/include)
 
+# NativeActivity yardımcı katmanı (pencere/girdi döngüsü) — NDK ile birlikte gelir
+add_library(native_app_glue STATIC
+        ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
+target_include_directories(native_app_glue PUBLIC
+        ${ANDROID_NDK}/sources/android/native_app_glue)
+
 target_link_libraries(craftya
+        native_app_glue
         android
         log
         EGL
