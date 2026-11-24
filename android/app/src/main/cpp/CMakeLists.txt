@@ -5,8 +5,10 @@ project(craftya CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -fno-math-errno")
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_C_VISIBILITY_PRESET hidden)
 
-set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../engine)
+set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../engine)
 
 add_library(craftya SHARED
         android_main.cpp

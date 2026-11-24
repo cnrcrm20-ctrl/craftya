@@ -54,7 +54,18 @@ jobs:
 
       - name: APK derle
         working-directory: android
-        run: gradle :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+
+      - name: Gradle log artefakti
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-log
+          path: /tmp/gradle.log
+          if-no-files-found: warn
 
       - name: Hata ayiklama (basarisizsa log'u commit yorumuna yaz)
         if: failure()

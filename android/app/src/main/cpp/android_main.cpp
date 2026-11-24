@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "craftya/engine.hpp"
+#include "craftya/atlas.hpp"
 #include "gles_backend.hpp"
 #include "ui_renderer.hpp"
 
@@ -52,6 +53,15 @@ void handleCmd(android_app* app, int32_t cmd) {
     if (!st) return;
 
     switch (cmd) {
+        case APP_CMD_WINDOW_RESIZED:
+            if (app->window && st->hasSurface) {
+                int w = ANativeWindow_getWidth(app->window);
+                int h = ANativeWindow_getHeight(app->window);
+                st->width = w; st->height = h;
+                st->gl.resize(w, h);
+                st->engine.onSurfaceChanged(w, h, st->dpi);
+            }
+            break;
         case APP_CMD_INIT_WINDOW: {
             if (!app->window) return;
             int w = ANativeWindow_getWidth(app->window);
@@ -184,6 +194,15 @@ void syncMeshes(AppState& st) {
 void renderFrame(AppState& st) {
     if (!st.hasSurface || !st.engineReady) return;
     Game& g = st.engine.game();
+
+    // doku atlası: ilk karede üret ve GPU'ya yükle (cihazda üretilir, dosya yok)
+    if (!st.atlasUploaded) {
+        Atlas atlas;
+        atlas.generateProcedural(20261124u);
+        st.gl.uploadAtlas(atlas.image());
+        st.atlasUploaded = true;
+        LOGI("atlas yuklendi: %dx%d", atlas.image().width, atlas.image().height);
+    }
 
     const float sky[3] = {0.53f, 0.72f, 0.98f};
     st.gl.beginFrame(sky, 60.f, 96.f);
