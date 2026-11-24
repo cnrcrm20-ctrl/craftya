@@ -1,6 +1,6 @@
 # Craftya — Android yerel kütüphane (libcraftya.so)
 cmake_minimum_required(VERSION 3.18)
-project(craftya CXX)
+project(craftya C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
