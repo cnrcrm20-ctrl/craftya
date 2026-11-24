@@ -55,6 +55,12 @@ $CXX $FLAGS engine/tests/test_systems.cpp \
 echo "▸ ASCII görüntüleyici derleniyor…"
 $CXX $FLAGS apps/desktop/viewer.cpp $SRC -o build/craftya_viewer
 
+echo "▸ simülasyon rasterizörü derleniyor…"
+$CXX $FLAGS apps/desktop/render_sim.cpp \
+     engine/src/game.cpp engine/src/render.cpp engine/src/mesher.cpp \
+     engine/src/physics.cpp engine/src/platform.cpp engine/src/lighting.cpp \
+     engine/src/atlas.cpp engine/src/anim.cpp -o build/craftya_sim
+
 echo ""
 echo "▸ motor testleri:"; ./build/craftya_test | tail -2
 echo "▸ oyun testleri:";  ./build/craftya_game_test | tail -2
@@ -62,3 +68,4 @@ echo "▸ sistem testleri:"; ./build/craftya_sys_test | tail -2
 echo ""
 echo "✓ hazır: build/craftya_test  build/craftya_game_test  build/craftya_sys_test  build/craftya_viewer"
 echo "  görüntüleyici: ./build/craftya_viewer 78 26"
+echo "  simülasyon:    ./build/craftya_sim 900 30 /tmp/frames 854 480"
