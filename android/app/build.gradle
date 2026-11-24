@@ -1,0 +1,59 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.craftya.game'
+    compileSdk 34
+    ndkVersion "26.1.10909125"
+
+    defaultConfig {
+        applicationId "com.craftya.game"
+        minSdk 24                 // Android 7.0+
+        targetSdk 34              // Android 14 (sessiz güncelleme için 33+ şart)
+        versionCode 1
+        versionName "0.1.0"
+
+        ndk {
+            // arm64 zorunlu, armeabi-v7a eski cihazlar için
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17 -O2 -fno-exceptions -fno-rtti"
+                arguments "-DANDROID_STL=c++_static"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("../../../keys/craftya-release.p12")
+            storePassword System.getenv("CRAFTYA_STORE_PASS") ?: "Craftya2026Release"
+            keyAlias "craftya"
+            keyPassword System.getenv("CRAFTYA_KEY_PASS") ?: "Craftya2026Release"
+            storeType "PKCS12"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+            ndk { debugSymbolLevel 'none' }
+        }
+        debug {
+            applicationIdSuffix ".debug"
+        }
+    }
+
+    // APK boyutu hedefi: 80 MB altı
+    packagingOptions {
+        jniLibs { useLegacyPackaging true }
+    }
+}
