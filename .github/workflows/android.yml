@@ -67,19 +67,25 @@ jobs:
           path: /tmp/gradle.log
           if-no-files-found: warn
 
-      - name: Hata ayiklama (basarisizsa log'u commit yorumuna yaz)
+      - name: Hata ayiklama (annotation olarak yayinla)
         if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          tail -120 /tmp/gradle.log > /tmp/tail.log || echo "gradle.log yok" > /tmp/tail.log
-          {
-            echo '```'
-            cat /tmp/tail.log
-            echo '```'
-          } > /tmp/body.md
-          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
-            -f body="$(cat /tmp/body.md)" || true
+          if [ ! -f /tmp/gradle.log ]; then
+            echo "::error::gradle.log olusmadi (derleme baslamadi)"
+            exit 0
+          fi
+          echo "=== INCELEME: toplam satir $(wc -l < /tmp/gradle.log) ==="
+          # en kritik satirlari annotation olarak yayinla (GitHub API'den okunabilir)
+          grep -n -iE "error:|FAILED|Caused by|undefined reference|No such file|cannot find|\* What went wrong" /tmp/gradle.log \
+            | head -25 \
+            | while IFS= read -r line; do
+                echo "::error title=GRADLE::$line"
+              done
+          echo "=== BAGLAM: son 40 satir ==="
+          tail -40 /tmp/gradle.log | while IFS= read -r line; do
+            echo "::warning title=SON::$line"
+          done
 
       - name: APK yerini bul
         run: |
