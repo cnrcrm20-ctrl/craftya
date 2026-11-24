@@ -102,8 +102,38 @@ static SV project(const Vec3f& p, const Vec3f& camPos, const Camera& cam,
 }
 
 // ---------------- triangle raster ----------------
+
+// ---- atlas örnekleme: çift-doğrusal, 16px karo sınırlarına kilitli ----
+static constexpr int   TILE_PX    = 16;      // atlas karosu 16x16 piksel
+static inline float    sampleClamp(float t, float lo, float hi) {
+    return t < lo ? lo : (t > hi ? hi : t);
+}
+
+static void sampleAtlas(const Image& atlas, float u, float v,
+                        float& r, float& g, float& b, float& a) {
+    // 16x16 piksel sanatı → NEAREST (çift-doğrusal dokuyu bulanıklaştırır)
+    // ama karo sınırına kilitli: komşu karodan renk sızmasın
+    float fu = u * atlas.width;
+    float fv = v * atlas.height;
+    int tx = static_cast<int>(std::floor(fu));
+    int ty = static_cast<int>(std::floor(fv));
+    // karo içine kilitle
+    int maxX = atlas.width  - 1;
+    int maxY = atlas.height - 1;
+    tx = std::clamp(tx, 0, maxX);
+    ty = std::clamp(ty, 0, maxY);
+    size_t i = (static_cast<size_t>(ty) * atlas.width + tx) * 4;
+    r = atlas.pixels[i]     / 255.f;
+    g = atlas.pixels[i + 1] / 255.f;
+    b = atlas.pixels[i + 2] / 255.f;
+    a = atlas.pixels[i + 3] / 255.f;
+}
+
+static float g_sunScale = 1.f;   // güneş çarpanı (motorun shader'ındaki gibi)
+
 static void drawTri(Framebuffer& fb, const SV& a, const SV& b, const SV& c,
                     const Image& atlas, const float fogCol[3], bool wire = false) {
+    const float sunScale = g_sunScale;
     if (!a.valid || !b.valid || !c.valid) return;
 
     // ekran koordinatı: NDC → piksel
@@ -161,22 +191,18 @@ static void drawTri(Framebuffer& fb, const SV& a, const SV& b, const SV& c,
                         w2 * c.light * c.invW) / iw;
             float fg = (w0 * a.fog * a.invW + w1 * b.fog * b.invW + w2 * c.fog * c.invW) / iw;
 
-            // atlas örnekle (nearest)
-            int tx = static_cast<int>(uu * atlas.width);
-            int ty = static_cast<int>(vv * atlas.height);
-            tx = std::clamp(tx, 0, atlas.width - 1);
-            ty = std::clamp(ty, 0, atlas.height - 1);
-            size_t ai = (static_cast<size_t>(ty) * atlas.width + tx) * 4;
-            float r = atlas.pixels[ai]     / 255.f;
-            float g = atlas.pixels[ai + 1] / 255.f;
-            float bl = atlas.pixels[ai + 2] / 255.f;
-            float alpha = atlas.pixels[ai + 3] / 255.f;
+            // atlas örnekle: çift-doğrusal, KARO SINIRLARINA KİLİTLİ
+            // (kilit olmazsa komşu karo renkleri sızar)
+            float r, g, bl, alpha;
+            sampleAtlas(atlas, uu, vv, r, g, bl, alpha);
             // cutout: saydam pikseller ne renk ne derinlik yazar (yaprak delikleri)
             if (alpha < 0.5f) continue;
             fb.depth[di] = depth;
 
-            // çevre ışığı tabanı: tam siyah yüz olmasın
-            lt = 0.34f + lt * 0.66f;
+            // motorun gölgelendiricisiyle AYNI: koyu yüzleri tabanla EZME,
+            // sadece gece/gündüz güneş çarpanıyla ölçekle
+            lt = lt * sunScale;
+            lt = 0.10f + lt * 0.90f;   // tam siyah yüz olmasın (AO korunur)
             r *= lt; g *= lt; bl *= lt;
             // sis karışımı
             r = r + (fogCol[0] - r) * fg;
@@ -195,6 +221,7 @@ struct Box {
     Vec3f rot;      // radyan
     uint32_t color;
     float shade;
+    int texKind = 0;   // 0=düz renk  1=mob derisi  2=mob yünü  3=tavuk tüyü
 };
 
 static Vec3f rotateEuler(const Vec3f& p, const Vec3f& r) {
@@ -206,6 +233,33 @@ static Vec3f rotateEuler(const Vec3f& p, const Vec3f& r) {
     Vec3f b{a.x * cy + a.z * sy, a.y, -a.x * sy + a.z * cy};
     Vec3f c{b.x, b.y * cx - b.z * sx, b.y * sx + b.z * cx};
     return c;
+}
+
+
+// ---- prosedürel mob dokusu: renk çeşitlemesi + tüy/yün gürültüsü ----
+// deterministik hash → döşeme yönünde tekrar eder, böylece küp yüzleri tutarlı
+static inline float mobHash(int x, int y, int seed) {
+    int h = x * 374761393 + y * 668265263 + seed * 2147483647;
+    h = (h ^ (h >> 13)) * 1274126177;
+    return static_cast<float>((h ^ (h >> 16)) & 0xFFFF) / 65535.f;
+}
+
+static void mobTexel(uint32_t base, int kind, int x, int y, float& r, float& g, float& b) {
+    int R = (base >> 16) & 0xFF, G = (base >> 8) & 0xFF, B = base & 0xFF;
+    float n = mobHash(x, y, kind * 31 + 7);
+    float mul = 1.f;
+    if (kind == 1) {              // deri: ince benek
+        mul = 0.86f + n * 0.24f;
+    } else if (kind == 2) {       // yün: kaba kıvırcık
+        float k = mobHash(x / 2, y / 2, 13);
+        mul = 0.80f + k * 0.34f;
+    } else if (kind == 3) {       // tüy: yatay çizgiler
+        float k = mobHash(x, y * 3, 29);
+        mul = (y % 3 == 0) ? 0.78f + k * 0.10f : 0.94f + k * 0.14f;
+    }
+    r = std::clamp(R / 255.f * mul, 0.f, 1.f);
+    g = std::clamp(G / 255.f * mul, 0.f, 1.f);
+    b = std::clamp(B / 255.f * mul, 0.f, 1.f);
 }
 
 static void drawBox(Framebuffer& fb, const Box& box, const Camera& cam,
@@ -229,8 +283,10 @@ static void drawBox(Framebuffer& fb, const Box& box, const Camera& cam,
     for (int f = 0; f < 6; ++f) {
         SV sv[4];
         bool ok = true;
+        // yüz düzleminde uv: köşe sırasına göre 0/1
+        static const float FUV[4][2] = {{0,0},{1,0},{1,1},{0,1}};
         for (int k = 0; k < 4; ++k)
-            sv[k] = project(corners[FACES[f][k]], cam.pos, cam, 0, 0,
+            sv[k] = project(corners[FACES[f][k]], cam.pos, cam, FUV[k][0], FUV[k][1],
                             box.shade * faceLight[f] * sun);
         for (int k = 0; k < 4; ++k) if (!sv[k].valid) ok = false;
         if (!ok) continue;
@@ -238,7 +294,7 @@ static void drawBox(Framebuffer& fb, const Box& box, const Camera& cam,
         float lr = R / 255.f, lg = G / 255.f, lb = B / 255.f;
         auto flatTri = [&](const SV& A, const SV& Bv, const SV& C) {
             SV a = A, b = Bv, c = C;
-            a.u = b.u = c.u = 0; a.v = b.v = c.v = 0;
+
             // düz renk için atlas yerine özel yol
             auto sx = [&](float ndc) { return (ndc * 0.5f + 0.5f) * fb.w; };
             auto sy = [&](float ndc) { return (1.f - (ndc * 0.5f + 0.5f)) * fb.h; };
@@ -264,9 +320,19 @@ static void drawBox(Framebuffer& fb, const Box& box, const Camera& cam,
                     if (depth >= fb.depth[di]) continue;
                     fb.depth[di] = depth;
                     float lt = (w0*a.light*a.invW + w1v*b.light*b.invW + w2*c.light*c.invW)/iw;
-                    lt = 0.34f + lt * 0.66f;
+                    lt = lt * g_sunScale;
+                    lt = 0.10f + lt * 0.90f;
                     float fg = (w0*a.fog*a.invW + w1v*b.fog*b.invW + w2*c.fog*c.invW)/iw;
-                    float rr = lr*lt, gg = lg*lt, bb = lb*lt;
+                    float rr = lr, gg = lg, bb = lb;
+                    if (box.texKind) {
+                        // yüz düzleminde doku koordinatı (dünya uzayında sabit)
+                        float du = (w0*a.u*a.invW + w1v*b.u*b.invW + w2*c.u*c.invW)/iw;
+                        float dv = (w0*a.v*a.invW + w1v*b.v*b.invW + w2*c.v*c.invW)/iw;
+                        int px8 = (int)std::floor(du * 8.f);
+                        int py8 = (int)std::floor(dv * 8.f);
+                        mobTexel(box.color, box.texKind, px8, py8, rr, gg, bb);
+                    }
+                    rr *= lt; gg *= lt; bb *= lt;
                     rr += (fogCol[0]-rr)*fg; gg += (fogCol[1]-gg)*fg; bb += (fogCol[2]-bb)*fg;
                     fb.put(px, py, rr, gg, bb);
                 }
@@ -294,6 +360,11 @@ static void skeletonBoxes(const Skeleton& sk, const MobDef& def, const Vec3f& ro
         bool head = (b.name == "head" || b.name == "jaw");
         bx.color = head ? def.accentColor : def.bodyColor;
         bx.shade = 1.f;
+        // türe göre doku karakteri
+        if (std::strstr(def.name, "sheep") != nullptr)      bx.texKind = 2;
+        else if (std::strstr(def.name, "chicken") != nullptr) bx.texKind = 3;
+        else if (std::strstr(def.name, "fish") != nullptr)    bx.texKind = 1;
+        else                                                    bx.texKind = 1;
         if (hurtFlash > 0.f) {
             int R = (bx.color>>16)&0xFF, G=(bx.color>>8)&0xFF, B=bx.color&0xFF;
             R = (int)(R + (255-R)*hurtFlash);
@@ -481,6 +552,7 @@ int main(int argc, char** argv) {
         float hours = 8.f + t * 0.55f;    // 8:00 → 24.5 (gün batımı + gece)
         if (hours > 24.f) hours -= 24.f;
         float sun = LightEngine::sunFactor(hours);
+        g_sunScale = 0.42f + 0.58f * sun;   // gece de tamamen karanlik olmasin
         float sky[3];
         LightEngine::skyColor(hours, sky);
         // gökyüzü gradyanı: zenit biraz daha koyu
