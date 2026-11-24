@@ -9,6 +9,7 @@
 #include "craftya/atlas.hpp"
 #include "craftya/mobs_gen.hpp"
 #include "craftya/anim.hpp"
+#include "craftya/ecosystem.hpp"
 #include "craftya/gui.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -131,6 +132,7 @@ static void sampleAtlas(const Image& atlas, float u, float v,
     a = atlas.pixels[i + 3] / 255.f;
 }
 
+static bool g_noDepth = false;
 static float g_sunScale = 1.f;   // güneş çarpanı (motorun shader'ındaki gibi)
 
 static void drawTri(Framebuffer& fb, const SV& a, const SV& b, const SV& c,
@@ -185,7 +187,7 @@ static void drawTri(Framebuffer& fb, const SV& a, const SV& b, const SV& c,
             if (iw <= 1e-9f) continue;
             float depth = 1.f / iw;      // kamera düzleminden gerçek uzaklık
             size_t di = static_cast<size_t>(py) * fb.w + px;
-            if (depth >= fb.depth[di]) continue;
+            if (!g_noDepth && depth >= fb.depth[di]) continue;
 
             float uu = (w0 * a.u * a.invW + w1 * b.u * b.invW + w2 * c.u * c.invW) / iw;
             float vv = (w0 * a.v * a.invW + w1 * b.v * b.invW + w2 * c.v * c.invW) / iw;
@@ -203,15 +205,18 @@ static void drawTri(Framebuffer& fb, const SV& a, const SV& b, const SV& c,
 
             // motorun gölgelendiricisiyle AYNI: koyu yüzleri tabanla EZME,
             // sadece gece/gündüz güneş çarpanıyla ölçekle
-            lt = lt * sunScale;
-            lt = 0.10f + lt * 0.90f;   // tam siyah yüz olmasın (AO korunur)
+            // NOT: lt zaten mesher'dan geliyor (skyLight * faceShade * AO).
+            // Burada ikinci kez güneş/normal çarpmak görüntüyü karartıyordu.
+            lt = getenv("SIM_FORCELIGHT") ? 1.0f : (0.05f + lt * 0.95f);
             r *= lt; g *= lt; bl *= lt;
             // sis karışımı
             r = r + (fogCol[0] - r) * fg;
             g = g + (fogCol[1] - g) * fg;
             bl = bl + (fogCol[2] - bl) * fg;
 
-            fb.putA(px, py, r, g, bl, alpha);
+            // cutout: alpha>=0.5 pikseller TAM OPAK yazılır.
+            // Karışım yapılırsa yaprak kenarları siyah zeminle karışıp leke oluyor.
+            fb.putA(px, py, r, g, bl, 1.f);
         }
     }
 }
@@ -322,8 +327,7 @@ static void drawBox(Framebuffer& fb, const Box& box, const Camera& cam,
                     if (depth >= fb.depth[di]) continue;
                     fb.depth[di] = depth;
                     float lt = (w0*a.light*a.invW + w1v*b.light*b.invW + w2*c.light*c.invW)/iw;
-                    lt = lt * g_sunScale;
-                    lt = 0.10f + lt * 0.90f;
+                    lt = getenv("SIM_FORCELIGHT") ? 1.0f : (0.05f + lt * 0.95f);
                     float fg = (w0*a.fog*a.invW + w1v*b.fog*b.invW + w2*c.fog*c.invW)/iw;
                     float rr = lr, gg = lg, bb = lb;
                     if (box.texKind) {
@@ -420,8 +424,10 @@ int main(int argc, char** argv) {
                         hmin = std::min(hmin, h); hmax = std::max(hmax, h);
                     }
                 float flat = -(hmax - hmin);
-                float score = flat * 3.f - static_cast<float>(r) * 0.02f;
-                if (col.biome == worldgen::Biome::Forest) score += 6.f;
+                float score = flat * 6.f - static_cast<float>(r) * 0.03f;
+                // yakında su/manzara olması bonus (görsel zenginlik)
+                if (col.biome == worldgen::Biome::Plains) score += 10.f;
+                if (col.biome == worldgen::Biome::Forest) score += 4.f;
                 if (score > bestScore) { bestScore = score; g_penX = (float)x; g_penZ = (float)z; }
             }
         }
@@ -441,91 +447,11 @@ int main(int argc, char** argv) {
     struct Key { float t; float yaw, pitch, yawRate; };
     (void)Key{};
 
-    // mob yerleşimi: oyuncunun önünde bir çayır
-    struct MobInst {
-        uint16_t mobId;
-        Vec3f pos;
-        Skeleton sk;
-        float yaw;
-        float phase;
-    };
-    std::vector<MobInst> mobs;
-    const uint16_t mobList[] = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_GOAT, MOB_CHICKEN, MOB_FROG, MOB_HORSE, MOB_WOLF};
-    for (int i = 0; i < 8; ++i) {
-        MobInst m;
-        m.mobId = mobList[i];
-        m.pos = {g_penX - 4.5f + (i % 4) * 3.0f, 30.f, g_penZ - 5.5f - (i / 4) * 2.6f};
-        m.yaw = 0.4f * i;
-        m.phase = i * 0.7f;
-        m.sk.build(mobDef(m.mobId));
-        mobs.push_back(m);
-    }
-    // zemini bul (moblar otursun) — GERÇEK bloklardan oku
-    for (auto& m : mobs) {
-        int gx = (int)std::floor(m.pos.x), gz = (int)std::floor(m.pos.z);
-        // chunk'ların yüklü olduğundan emin ol (yoksa getBlock AIR döner!)
-        for (int cy = 0; cy <= 6; ++cy)
-            world.getOrCreate({gx >= 0 ? gx / CHUNK_W : (gx - CHUNK_W + 1) / CHUNK_W, cy,
-                               gz >= 0 ? gz / CHUNK_W : (gz - CHUNK_W + 1) / CHUNK_W});
-        float h = 1.f;
-        for (int dz = -1; dz <= 1; ++dz)
-            for (int dx = -1; dx <= 1; ++dx) {
-                int bx = gx + dx, bz = gz + dz;
-                for (int y = 190; y > 1; --y) {
-                    BlockId b = world.getBlock(bx, y, bz);
-                    if (b != AIR && !isLiquid(b)) { h = std::max(h, (float)y); break; }
-                }
-            }
-        m.pos.y = h + 1.3f;
-    }
+    // ekosistem: gerçek canlı simülasyonu (biyoma uygun doğum, sürü, otlama)
+    Ecosystem eco;
+    eco.init(SEED ^ 0xEC0ull);
 
-    // ---- ağaçlar (dünyayı zenginleştir) ----
-    {
-        uint32_t st = 9176u;
-        auto rnd = [&]() { st = st * 1664525u + 1013904223u; return (st >> 16) & 0x7FFF; };
-        for (int i = 0; i < 1400; ++i) {
-            int tx = static_cast<int>(rnd() % 200) - 100;
-            int tz = static_cast<int>(rnd() % 200) - 100;
-            float h = world.heightAt(tx, tz);
-            int base = static_cast<int>(h) + 1;
-            if (base < 26) continue;               // suyun altına dikme
-            if (world.getBlock(tx, base - 1, tz) != GRASS) continue;
-            // mob sahnesinin etrafını boş bırak
-            if (tx > -14 && tx < 12 && tz > -16 && tz < 10) continue;
-            // kamera yolunu boş bırak
-            if (tx > -8 && tx < 6 && tz > -6 && tz < 8) continue;
-            int th = 4 + static_cast<int>(rnd() % 3);
-            for (int y = 0; y < th; ++y)
-                world.setBlock(tx, base + y, tz, OAK_LOG);
-            for (int dy = th - 2; dy <= th + 1; ++dy)
-                for (int dx = -2; dx <= 2; ++dx)
-                    for (int dz = -2; dz <= 2; ++dz) {
-                        if (dx * dx + dz * dz > 5) continue;
-                        if (dx == 0 && dz == 0 && dy < th) continue;
-                        if (world.getBlock(tx + dx, base + dy, tz + dz) == AIR)
-                            world.setBlock(tx + dx, base + dy, tz + dz, OAK_LEAVES);
-                    }
-        }
-    }
-
-    // spawn çevresini ağaçlardan/bitkilerden temizle (kamera içine girmesin)
-    {
-        int r = 7;
-        for (int dz = -r; dz <= r; ++dz)
-            for (int dx = -r; dx <= r; ++dx) {
-                int bx = static_cast<int>(g_penX) + dx;
-                int bz = static_cast<int>(g_penZ) + dz;
-                for (int y = 60; y <= 120; ++y) {
-                    BlockId b = world.getBlock(bx, y, bz);
-                    if (b == AIR) continue;
-                    uint8_t st = blockDef(b).style;
-                    if (st == kStyle_cross || st == kStyle_leaves ||
-                        b == OAK_LOG || b == BIRCH_LOG || b == SPRUCE_LOG ||
-                        b == DARK_OAK_LOG || b == ACACIA_LOG)
-                        world.setBlock(bx, y, bz, AIR);
-                }
-            }
-    }
+    // ağaçlar artık dünya üreticisinden geliyor (bkz. worldgen.hpp)
 
     // ---- mesh önbelleği: bir kez üret, sonra sadece rasterize et ----
     struct ChunkMesh { ChunkPos pos; MeshData data; };
@@ -553,6 +479,10 @@ int main(int argc, char** argv) {
         std::printf("  mesh onbellegi: %zu chunk\n", meshCache.size());
     }
 
+    // ekosistemi ısıt: ilk karelerde moblar doğsun
+    for (int i = 0; i < 90; ++i) eco.update(0.1f, world, Vec3f{g_penX, 74.f, g_penZ}, 10.f, true);
+    
+
     char path[512];
     for (int f = 0; f < frames; ++f) {
         float t = static_cast<float>(f) / fps;
@@ -566,22 +496,22 @@ int main(int argc, char** argv) {
         if (t < 9.f) {
             float k = t / 9.f;
             radius = 13.f - k * 4.f;              // 13 → 9
-            height = 2.2f + std::sin(k * 3.14159f) * 0.5f;
+            height = 3.4f + std::sin(k * 3.14159f) * 0.8f;
             yawOff = -0.75f + k * 0.45f;
         } else if (t < 18.f) {
             float k = (t - 9.f) / 9.f;
             radius = 9.f - k * 2.5f;               // 9 → 6.5
-            height = 1.9f + std::sin(k * 6.28318f) * 0.35f;
+            height = 2.8f + std::sin(k * 6.28318f) * 0.5f;
             yawOff = -0.30f + k * 1.10f;           // orbit
         } else if (t < 24.f) {
             float k = (t - 18.f) / 6.f;
             radius = 6.5f + k * 9.f;               // 6.5 → 15.5
-            height = 2.6f + k * 2.2f;              // yüksel
+            height = 3.2f + k * 3.0f;              // yüksel
             yawOff = 0.80f + k * 0.55f;
         } else {
             float k = (t - 24.f) / 6.f;
             radius = 15.5f - k * 3.5f;
-            height = 4.8f - k * 1.6f;
+            height = 6.2f - k * 2.0f;
             yawOff = 1.35f + k * 0.50f;
         }
 
@@ -606,7 +536,8 @@ int main(int argc, char** argv) {
             }
         float camY = groundHere + height;
         float eyeY = groundPen + 1.5f;
-        float pitch = std::atan2(eyeY - camY, radius) * 0.9f;
+        // hedefe bak: mob kümesi + hafif aşağı (gökyüzüne bakma)
+        float pitch = std::atan2(eyeY - camY, radius) * 0.55f - 0.10f;
 
         Camera cam;
         cam.pos = {camX, camY, camZ};
@@ -629,16 +560,21 @@ int main(int argc, char** argv) {
         float top[3] = {sky[0] * 0.78f, sky[1] * 0.84f, sky[2] * 1.05f};
         float bottom[3] = {sky[0], sky[1], sky[2]};
 
-        if (f < 2)
-            std::printf("    [dbg] f=%d cam=(%.1f,%.1f,%.1f) yaw=%.2f pitch=%.2f ground=%.1f mob0=(%.1f,%.1f,%.1f)\n",
-                        f, camX, camY, camZ, yaw, pitch, groundHere,
-                        mobs[0].pos.x, mobs[0].pos.y, mobs[0].pos.z);
+        if (f == 0) {
+            int bx = (int)camX, bz = (int)camZ;
+            std::printf("    [dbg] cam=(%.1f,%.1f,%.1f) pitch=%.2f | blok@cam=%s | ust=%s | alt=%s\n",
+                camX, camY, camZ, pitch,
+                blockDef(world.getBlock(bx,(int)camY,bz)).key,
+                blockDef(world.getBlock(bx,(int)camY+2,bz)).key,
+                blockDef(world.getBlock(bx,(int)camY-2,bz)).key);
+        }
         Mat4 proj = Mat4::perspective(cam.fovDeg * 3.14159265f / 180.f,
                                       static_cast<float>(W) / H, 0.08f, 400.f);
         Mat4 view = cam.view();
         g_viewProj = proj * view;
 
         fb.clearSky(top, bottom);
+        g_noDepth = getenv("SIM_NODEPTH") != nullptr;
 
         // güneş diski (gökyüzünde)
         if (sun > 0.15f) {
@@ -701,23 +637,15 @@ int main(int argc, char** argv) {
             ++drawnChunks;
         }
 
-        // ---- moblar (iskelet animasyonu) ----
+        // ---- moblar: GERÇEK ekosistem (canlı davranış + iskelet animasyonu) ----
         std::vector<Box> boxes;
-        for (auto& m : mobs) {
-            const MobDef& def = mobDef(m.mobId);
-            AnimContext ctx;
-            ctx.rootPos = m.pos;
-            ctx.speed = 1.2f + std::sin(t * 1.3f + m.phase) * 0.8f;
-            ctx.onGround = true;
-            ctx.lookTarget = cam.pos;
-            ctx.healthPct = 1.f;
-            m.sk.update(dt, ctx);
-            m.yaw += dt * 0.15f * std::sin(t * 0.7f + m.phase);
-            skeletonBoxes(m.sk, def, m.pos, m.yaw, boxes, 0.f);
-            // gölge: basit elips
-            int gx = (int)std::floor(m.pos.x), gz = (int)std::floor(m.pos.z);
-            float h = world.heightAt(gx, gz) + 1.0f;
-            (void)h;
+        eco.update(dt, world, cam.pos, 10.f + t * 0.4f, true);
+        for (const auto& m : eco.mobs()) {
+            const MobDef& def = mobDef(m.type);
+            // kameradan çok uzaktakileri çizme
+            float dist2 = (m.pos - cam.pos).length();
+            if (dist2 > 110.f) continue;
+            skeletonBoxes(m.sk, def, m.pos, m.yaw, boxes, m.hurtFlash);
         }
         // sıralama: kamera uzaklığına göre (arkadan öne)
         std::sort(boxes.begin(), boxes.end(), [&](const Box& A, const Box& B) {
@@ -759,7 +687,7 @@ int main(int argc, char** argv) {
             auto now = std::chrono::high_resolution_clock::now();
             float secs = std::chrono::duration<float>(now - t0).count();
             std::printf("  kare %4d/%d  t=%5.1fs  chunk=%d  mob=%zu  quad=%ld  (%.1f sn)\n",
-                        f, frames, t, drawnChunks, mobs.size(), meshQuads, secs);
+                        f, frames, t, drawnChunks, eco.count(), meshQuads, secs);
             std::fflush(stdout);
         }
     }

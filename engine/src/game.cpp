@@ -16,11 +16,34 @@ Game::Game(uint64_t seed, bool generateTerrain)
     : world_(seed, generateTerrain) {
     // başlangıç konumu: yüzeyin üstü
     float h = world_.heightAt(0, 0);
-    body_.pos = {0.5f, h + 2.0f, 0.5f};
+    // güvenli spawn: deniz seviyesinin üstünde kara bul
+    int sx = 0, sz = 0;
+    {
+        float best = -1e9f;
+        for (int r = 0; r < 200; r += 8)
+            for (int a = 0; a < 16; ++a) {
+                float ang = a * 6.28318f / 16.f;
+                int x = static_cast<int>(std::cos(ang) * r);
+                int z = static_cast<int>(std::sin(ang) * r);
+                auto col = world_.generator().column(x, z);
+                if (col.underwater) continue;
+                if (col.height < 64) continue;
+                float sc = -static_cast<float>(r) * 0.05f + static_cast<float>(col.height) * 0.1f;
+                if (sc > best) { best = sc; sx = x; sz = z; }
+            }
+        h = world_.heightAt(sx, sz);
+    }
+    body_.pos = {static_cast<float>(sx) + 0.5f, h + 2.0f, static_cast<float>(sz) + 0.5f};
     camera_.pos = body_.pos + Vec3f{0, 1.62f, 0};
+    eco_.init(seed);
 }
 
 void Game::update(float dt, const InputState& in) {
+    // -- ekosistem (moblar) --
+    // oyuncunun çevresindeki chunk'lar yüklü olsun ki moblar zemini bulsun
+    clock_.update(dt);
+    eco_.update(dt, world_, body_.pos, clock_.hours, true);
+
     // -- FPS/istatistik --
     stats_.frameMs = dt * 1000.f;
     avgFrameMs_ = avgFrameMs_ * 0.9f + stats_.frameMs * 0.1f;

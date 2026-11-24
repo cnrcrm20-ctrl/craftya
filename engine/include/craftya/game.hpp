@@ -2,6 +2,8 @@
 #pragma once
 #include "craftya/core.hpp"
 #include "craftya/world.hpp"
+#include "craftya/ecosystem.hpp"
+#include "craftya/lighting.hpp"
 #include "craftya/mesher.hpp"
 #include "craftya/physics.hpp"
 #include "craftya/render.hpp"
@@ -58,6 +60,8 @@ public:
     Settings& settings() { return settings_; }
     BlockId selectedBlock() const { return selected_; }
     const RayHit& crosshair() const { return hit_; }
+    Ecosystem& ecosystem() { return eco_; }
+    const Ecosystem& ecosystem() const { return eco_; }
 
     void setResolutionScale(float s) { settings_.resolutionScale = std::max(0.5f, std::min(1.0f, s)); }
 
@@ -66,6 +70,8 @@ private:
     void updateCameraFromBody(float dt);
 
     World world_;
+    Ecosystem eco_;
+    DayCycle clock_;
     Camera camera_;
     Body body_;
     RayHit hit_;

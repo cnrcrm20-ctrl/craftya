@@ -68,16 +68,23 @@ void LightEngine::computeChunk(World& world, Chunk& chunk) {
                 int wy = cp.y * CHUNK_H + ly;
                 int wz = cp.z * CHUNK_W + lz;
 
-                // skylight: bloğun üstünde HİÇ opak blok yoksa gökyüzü ışığı tam (15).
-                // (önceki sürüm sadece 5 blok yukarı bakıyordu → ağaç altı kapkaranlıktı)
-                bool openAbove = true;
-                for (int ay = wy + 1; ay < wy + 48 && openAbove; ++ay) {
-                    BlockId above = world.getBlock(wx, ay, wz);
-                    if (above != AIR && isOpaque(above)) openAbove = false;
-                }
-                if (openAbove && !isOpaque(id) && !isOpaque(world.getBlock(wx, wy + 1, wz))) {
-                    L.sky(lx, ly, lz) = 15;
-                    skyQ.push_back({lx, ly, lz, 15});
+                // skylight tohumlama: gökyüzüne açık kolonlarda ışık 15.
+                //   * hava hücresi → 15
+                //   * yüzey bloğunun KENDİSİ → 15 (yoksa çim yüzü kapkara kalır)
+                //   * yüzeyin 3 blok altına kadar sönümlü ışık (yatay yayılım için)
+                {
+                    bool openAbove = true;
+                    for (int ay = wy + 1; ay < wy + 48 && openAbove; ++ay) {
+                        BlockId above = world.getBlock(wx, ay, wz);
+                        if (above != AIR && isOpaque(above)) openAbove = false;
+                    }
+                    if (openAbove) {
+                        // Maske: üstü açık AMA kendisi opak olan hücre de 15 alır,
+                        // sadece "bu hücre opak ve üstü kapalı" olan 0 kalır.
+                        int lvl = 15;
+                        L.sky(lx, ly, lz) = static_cast<uint8_t>(lvl);
+                        skyQ.push_back({lx, ly, lz, static_cast<uint8_t>(lvl)});
+                    }
                 }
                 // blok ışığı
                 uint8_t emit = blockLight(id);

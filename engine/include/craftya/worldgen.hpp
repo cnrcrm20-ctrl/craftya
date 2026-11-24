@@ -220,7 +220,9 @@ public:
     // --- mağara / yarık testi ---
     bool isCave(int wx, int wy, int wz, int surface) const {
         if (wy <= 1) return false;                       // yatak kayası
-        if (wy >= surface) return false;
+        // YÜZEYİN 5 BLOK ALTINA KADAR MAĞARA YOK — aksi halde çim örtüsü oyuluyor
+        // ve gün ışığı göremeyen dev çukurlar oluşuyor.
+        if (wy > surface - 5) return false;
         float depthFade = std::clamp(static_cast<float>(surface - wy) / 6.f, 0.f, 1.f);
 
         // spagetti mağara: iki gürültünün sıfıra yakın kesişimi
