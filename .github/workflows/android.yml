@@ -54,7 +54,21 @@ jobs:
 
       - name: APK derle
         working-directory: android
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
+        run: gradle :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+
+      - name: Hata ayiklama (basarisizsa log'u commit yorumuna yaz)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tail -120 /tmp/gradle.log > /tmp/tail.log || echo "gradle.log yok" > /tmp/tail.log
+          {
+            echo '```'
+            cat /tmp/tail.log
+            echo '```'
+          } > /tmp/body.md
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -f body="$(cat /tmp/body.md)" || true
 
       - name: APK artefakt
         uses: actions/upload-artifact@v4
