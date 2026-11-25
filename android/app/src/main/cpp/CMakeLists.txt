@@ -61,14 +61,15 @@ target_include_directories(craftya PRIVATE
         ${ENGINE_DIR}/include
         ${GLUE_DIR})
 
-# AAudio yalnızca API 26+ var; API 24/25'te ön işlemciyle kapatılır.
+# DİKKAT: libaaudio'yu AÇIKÇA bağlamayın — NDK'da libaaudio.a/.so YOKTUR,
+# Android sistem kütüphanesidir; "ld.lld: unable to find library -laaudio"
+# hatası verir. AAudio simgeleri çalışma anında sistemden çözülür.
 target_link_libraries(craftya
         android
         log
         EGL
         GLESv3
         m
-        aaudio
 )
 
 # ---------------------------------------------------------------------------
