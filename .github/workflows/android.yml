@@ -53,7 +53,21 @@ jobs:
           gradle-version: '8.7'
 
       - name: Motor testleri (masaustu)
-        run: ./build.sh
+        shell: bash
+        run: |
+          set +e
+          ./build.sh > /tmp/build.log 2>&1
+          rc=$?
+          echo "build.sh cikis kodu: $rc"
+          if [ $rc -ne 0 ]; then
+            # log indirilemedigi durumlar icin hatayi annotation'a bas
+            grep -n -i "error\|hata\|BASARISIZ\|undefined" /tmp/build.log | head -40 | while IFS= read -r line; do
+              echo "::error title=build.sh::$line"
+            done
+            tail -40 /tmp/build.log
+            exit $rc
+          fi
+          tail -12 /tmp/build.log
 
       - name: APK derle
         working-directory: android
