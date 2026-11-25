@@ -803,14 +803,17 @@ std::string ChatLog::submit() {
 
 void ChatLog::buildKeyboard(DrawList& out, float screenW, float screenH) {
     if (!inputOpen_) return;
-    const float kbH = screenH * 0.42f;
+    const float kbH = screenH * 0.46f;
     const float kbY = screenH - kbH;
     const float rad = std::min(screenW, screenH) * 0.035f;
 
     // cam panel (üstü yuvarlak) + yumuşak geçiş
     out.gradient(Rect{0.f, kbY - 26.f, screenW, 26.f},
                  Color{0.05f, 0.06f, 0.09f, 0.f}, Color{0.05f, 0.06f, 0.09f, 0.88f});
-    out.roundRect(Rect{0.f, kbY, screenW, kbH + rad}, Color{0.05f, 0.06f, 0.09f, 0.94f}, rad);
+    // OPAK panel: yarı saydamken alttaki HUD düğmeleri tuşların arasından
+    // görünüyordu (klavye açıkken HUD gizlenmeli).
+    out.rect(Rect{0.f, kbY, screenW, kbH + rad}, Color{0.05f, 0.06f, 0.09f, 1.f});
+    out.roundRect(Rect{0.f, kbY, screenW, kbH + rad}, Color{0.05f, 0.06f, 0.09f, 1.f}, rad);
     // üst kenar ışığı
     out.gradient(Rect{rad, kbY, screenW - rad * 2.f, 2.f},
                  Color{0.32f, 0.86f, 0.58f, 0.9f}, Color{0.32f, 0.86f, 0.58f, 0.15f});
@@ -847,9 +850,10 @@ void ChatLog::buildKeyboard(DrawList& out, float screenW, float screenH) {
         "asdfghjklg",
         "zxcvbnm,.?"
     };
-    const float availH = kbH - 84.f;
+    // 4 harf satırı + boşluk satırı = 5 satır; boşluk satırı da sığmalı
+    const float availH = kbH - 78.f;
     float keyW = screenW * 0.076f;
-    float keyH = std::min((availH - 4.f * 6.f) / 5.f, keyW * 1.10f);
+    float keyH = std::min((availH - 5.f * 6.f) / 5.f, keyW * 1.10f);
     const float keyRad = std::min(keyW, keyH) * 0.24f;
     const float gap = std::max(3.f, keyW * 0.09f);
 
@@ -880,6 +884,7 @@ void ChatLog::buildKeyboard(DrawList& out, float screenW, float screenH) {
     }
     // en alt satır: boşluk
     float sy = fieldY + fieldH + 14.f + 4.f * (keyH + 6.f);
+    if (sy + keyH > screenH - 4.f) sy = screenH - 4.f - keyH;
     float spaceW = screenW * 0.50f;
     out.roundRect(Rect{(screenW - spaceW) * 0.5f, sy + 1.5f, spaceW, keyH},
                   Color{0.f, 0.f, 0.f, 0.40f}, keyRad);
