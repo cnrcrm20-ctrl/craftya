@@ -1,7 +1,8 @@
 # Craftya 3.0.0 — Sürüm Notları
 
-**APK:** `v3.0.0-b24` · 406.797 bayt · arm64-v8a · imzalı
+**APK:** `v3.0.0-b31` · 412.681 bayt · arm64-v8a · imzalı
 **Test:** 336 otomatik test / 0 hata
+**Arayüz:** modern (SDF yuvarlak köşe + gradyan + anti-aliased yazı)
 **Motor:** 457 içerik (311 blok + 37 canlı + 109 eşya), 130 üretim tarifi
 
 ---
