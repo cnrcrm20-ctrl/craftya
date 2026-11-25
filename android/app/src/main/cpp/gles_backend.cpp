@@ -179,6 +179,10 @@ void GLESBackend::createUiPipeline() {
 
 // ---------------- TOPLU YAZI ----------------
 void GLESBackend::beginUiText() {
+    // ÖNEMLİ: glVertexAttribPointer bir kez kurulduğunda VAO durumunda kalıyor.
+    // Toplu yazı 8 float'lık, diğer çizimler 4 float'lık düzen kullanıyor;
+    // yazıdan sonra düzen geri kurulmazsa TÜM arayüz bozuk çizilir.
+    // Bu yüzden flush sonunda düzeni burada yeniden kuruyoruz.
     textVerts_.clear();
 }
 
@@ -205,7 +209,9 @@ void GLESBackend::addUiGlyph(float x, float y, float w, float h,
 }
 
 void GLESBackend::flushUiText() {
-    if (textVerts_.empty() || uiProgram_ == 0 || fontTex_ == 0) { textVerts_.clear(); return; }
+    if (textVerts_.empty() || uiProgram_ == 0 || fontTex_ == 0) {
+        textVerts_.clear(); return;
+    }
     glUniform1i(glGetUniformLocation(uiProgram_, "uVertColor"), 1);
     glUniform1i(glGetUniformLocation(uiProgram_, "uUseGrad"), 0);
     glUniform1f(glGetUniformLocation(uiProgram_, "uCorner"), 0.f);
@@ -228,9 +234,20 @@ void GLESBackend::flushUiText() {
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(textVerts_.size() / 8));
     stats_.drawCalls++;
     textVerts_.clear();
-    // diğer çizimler 4 float'lık düzen kullanıyor: 2. özniteliği kapat
     glDisableVertexAttribArray(2);
     glUniform1i(glGetUniformLocation(uiProgram_, "uVertColor"), 0);
+
+    // ---- VAO durumunu normale döndür ----
+    // 4 float'lık düzeni (x,y,u,v) yeniden kur. Bu satırlar olmadan yazıdan
+    // sonraki paneller/kartlar yanlış öznitelik düzeniyle çizilip ekranı
+    // bozuyordu.
+    glBindBuffer(GL_ARRAY_BUFFER, uiQuadVbo_);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                          reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                          reinterpret_cast<void*>(2 * sizeof(float)));
 }
 
 void GLESBackend::resize(int w, int h) {

@@ -78,7 +78,7 @@ private:
     unsigned int quadVbo_ = 0;
     unsigned int uiQuadVbo_ = 0;
     unsigned int uiTextVbo_ = 0;
-    std::vector<float> textVerts_;   // 6 float/köşe: x,y,u,v,r,g,b,a
+    std::vector<float> textVerts_;   // köşe başına 8 float: x,y,u,v,r,g,b,a
     int uiQuadCapacity_ = 0;
     int width_ = 0, height_ = 0;
     float viewProj_[16] = {0};
