@@ -5,6 +5,7 @@
 #include <GLES3/gl3.h>
 #include <cstring>
 #include <cmath>
+#include <algorithm>
 
 namespace craftya {
 
