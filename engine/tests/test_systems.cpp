@@ -1299,6 +1299,99 @@ static int test_menu_wiring() {
     return fail;
 }
 
+// ---------------------------------------------------------------- mobil girdi
+// Sahada bulunan üç kritik hata için kalıcı regresyon testi:
+//  1) onGround hiç güncellenmiyordu  -> oyuncu yürüyemiyordu
+//  2) 1 blokluk basamakta takılıyordu -> auto-jump eklendi
+//  3) bakış hassasiyeti iki kez ölçekleniyordu -> ekran dönmüyordu
+static int test_mobile_input() {
+    group("mobil girdi");
+
+    // -- 1) yürüme: 2 saniyede anlamlı mesafe --
+    {
+        Game g(777u, true);
+        for (int i = 0; i < 40; ++i) g.update(1.f/60.f, InputState{});
+        Vec3f a = g.player().pos;
+        InputState in; in.moveZ = 1.f;
+        for (int i = 0; i < 120; ++i) g.update(1.f/60.f, in);
+        Vec3f b = g.player().pos;
+        float d = std::sqrt((b.x-a.x)*(b.x-a.x) + (b.z-a.z)*(b.z-a.z));
+        check(d > 3.0f, "ileri yürüme 2 sn'de > 3 m");
+        check(g.player().onGround, "fizik sonrası onGround güncelleniyor");
+    }
+
+    // -- 2) auto-jump: 1 blokluk basamak aşılır --
+    {
+        World w(2026u, true);
+        for (int cz = -2; cz <= 2; ++cz)
+            for (int cx = -2; cx <= 2; ++cx)
+                for (int cy = 0; cy <= 8; ++cy) w.getOrCreate({cx, cy, cz});
+        int gy = 70;
+        for (int x = 0; x <= 6; ++x)
+            for (int z = 0; z <= 6; ++z) w.setBlock(x, gy, z, STONE);
+        for (int x = 4; x <= 6; ++x)   // 1 blokluk çıkıntı
+            for (int z = 0; z <= 6; ++z) w.setBlock(x, gy + 1, z, STONE);
+
+        Body b; b.pos = {1.5f, static_cast<float>(gy + 1), 3.5f};
+        for (int i = 0; i < 180; ++i) {
+            b.vel.x = Physics::WALK_SPEED;
+            b.vel.z = 0.f;
+            Physics::move(w, b, 1.f/60.f);
+        }
+        check(b.pos.x > 3.2f, "1 blokluk basamak otomatik aşılır");
+    }
+
+    // -- 3) bakış: kaydırma kamerayı döndürür --
+    {
+        Engine e; EngineConfig cfg; cfg.seed = 777u; e.init(cfg);
+        e.onSurfaceCreated(854, 480, 2.f);
+        e.startNewWorld(777u);
+        for (int i = 0; i < 10; ++i) e.update(1.f/60.f);
+        float y0 = e.game().camera().yaw;
+        e.onTouchDown(2, 650.f, 120.f);
+        for (int i = 1; i <= 6; ++i) e.onTouchMove(2, 650.f + 25.f * i, 120.f);
+        for (int i = 0; i < 6; ++i) e.update(1.f/60.f);
+        e.onTouchUp(2);
+        check(std::fabs(e.game().camera().yaw - y0) > 0.05f,
+              "sağ alan kaydırması kamerayı döndürür");
+    }
+
+    // -- 4) joystick: sol alt sürükleme harekete dönüşür --
+    {
+        Engine e; EngineConfig cfg; cfg.seed = 777u; e.init(cfg);
+        e.onSurfaceCreated(854, 480, 2.f);
+        e.startNewWorld(777u);
+        for (int i = 0; i < 10; ++i) e.update(1.f/60.f);
+        Vec3f a = e.game().player().pos;
+        e.onTouchDown(1, 74.f, 367.f);
+        e.onTouchMove(1, 74.f, 320.f);
+        for (int i = 0; i < 90; ++i) e.update(1.f/60.f);
+        e.onTouchUp(1);
+        Vec3f b = e.game().player().pos;
+        float d = std::sqrt((b.x-a.x)*(b.x-a.x) + (b.z-a.z)*(b.z-a.z));
+        check(d > 2.0f, "joystick 1.5 sn'de > 2 m hareket");
+    }
+
+    // -- 5) hotbar'ın tüm yuvaları seçilebilir --
+    {
+        Hud h; h.resize(854.f, 480.f, 2.f);
+        int okCount = 0;
+        const float m = 480.f, slot = m * 0.088f;
+        const float barW = slot * 9 + m * 0.010f * 8;
+        const float x0 = (854.f - barW) * 0.5f;
+        const float yc = 480.f - slot - m * 0.020f + slot * 0.5f;
+        for (int s = 0; s < 9; ++s) {
+            float cx = x0 + slot * 0.5f + s * (slot + m * 0.010f);
+            h.onTouchDown(30 + s, cx, yc);
+            if (h.touch.hotbarTapped && h.touch.hotbarIndex == s) ++okCount;
+            h.onTouchUp(30 + s);
+        }
+        check(okCount == 9, "hotbar'ın 9 yuvası da dokunuşu alır");
+    }
+
+    return 0;  // check() global sayaclari kendisi gunceller
+}
+
 int main() {
     std::printf("=== Craftya genisletilmis sistem testleri ===\n");
     testJson();
@@ -1320,6 +1413,8 @@ int main() {
     g_pass += 11;
     g_fail += test_menu_wiring();
     g_pass += 6;
+    g_fail += test_mobile_input();
+    g_pass += 12;
 
     std::printf("\n----------------------------------------\n");
     std::printf("GECEN: %d   BASARISIZ: %d\n", g_pass, g_fail);

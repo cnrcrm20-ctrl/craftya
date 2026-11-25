@@ -60,6 +60,40 @@ MoveResult Physics::move(World& world, Body& body, float dt) {
 
             if (collides(world, body.box())) {
                 body.pos = oldPos;
+                // YATAY çarpışma: MOBİL OTOMATİK ZIPLAMA (Bedrock'taki auto-jump).
+                // Dokunmatik kontrolde oyuncu 1 blokluk basamağa takılıp
+                // "oyun hareket etmiyor" hissine kapılıyordu.
+                // Kolay tırmanılabilir çıkıntı varsa yukarı hız ver.
+                bool autoJumped = false;
+                if ((axis == 0 || axis == 2) && body.onGround) {
+                    Vec3f save = body.pos;
+                    bool ledgeAbove = false, headroomOk = false;
+                    for (float stepH = 0.6f; stepH <= 1.1f; stepH += 0.25f) {
+                        body.pos = save;
+                        if (axis == 0) body.pos.x += delta; else body.pos.z += delta;
+                        // çıkıntının üstü boş mu?
+                        Vec3f up = body.pos;
+                        up.y += stepH;
+                        body.pos = up;
+                        if (!collides(world, body.box())) {
+                            ledgeAbove = true;
+                            // baş üstü boşluğu: zıplayınca sıkışmayalım
+                            Vec3f hd = body.pos;
+                            hd.y += 1.2f;
+                            body.pos = hd;
+                            if (!collides(world, body.box())) headroomOk = true;
+                            break;
+                        }
+                    }
+                    body.pos = save;
+                    if (ledgeAbove && headroomOk) {
+                        body.vel.y = Physics::JUMP_VEL * 0.92f;
+                        body.onGround = false;
+                        res.landed = false;
+                        autoJumped = true;
+                    }
+                }
+                if (autoJumped) return;
                 if (axis == 0) { body.vel.x = 0; res.hitX = true; }
                 if (axis == 2) { body.vel.z = 0; res.hitZ = true; }
                 if (axis == 1) {
@@ -90,9 +124,23 @@ MoveResult Physics::move(World& world, Body& body, float dt) {
             body.onGround = true;
             res.landed = true;
         }
+        // basamak çıkıldıysa yatay hız korunur; çarpışma bayrağını temizle
+        if (res.landed && (std::fabs(body.vel.x) > 0.01f || std::fabs(body.vel.z) > 0.01f)) {
+            res.hitX = res.hitZ = false;
+        }
     }
 
     if (!res.hitY) body.onGround = false;
+    // kare sonunda zemin/su durumunu raporla (Game bunu gövdeye yazar)
+    {
+        AABB b = body.box();
+        AABB probe = b;
+        probe.min.y -= 0.06f;
+        probe.max.y = b.min.y + 0.02f;
+        res.onGround = body.onGround || Physics::collides(world, probe);
+        Vec3f c{body.pos.x, body.pos.y + body.height * 0.5f, body.pos.z};
+        res.inWater = pointInWater(world, c);
+    }
     return res;
 }
 

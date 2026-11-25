@@ -6,6 +6,10 @@
 
 namespace craftya {
 
+// Dokunmatik bakış: 1 px ≈ 0.0026 rad (~0.15°) — mobilde doğal his.
+// Ayar çarpanı (0.5–2.0) kullanıcı tarafında uygulanır.
+static constexpr float LOOK_SENS_MOBILE = 0.0026f;
+
 Engine::Engine() = default;
 Engine::~Engine() { shutdown(); }
 
@@ -358,9 +362,11 @@ void Engine::tickPlaying(float dt) {
     hud_.touch.lookDy = 0.f;
 
     // bakış hassasiyeti
-    in.lookDX *= 0.0035f * cfg_.settings.touchSensitivity;
-    in.lookDY *= 0.0035f * cfg_.settings.touchSensitivity *
-                 (cfg_.settings.invertY ? -1.f : 1.f);
+    // DİKKAT: hassasiyet yalnızca BURADA uygulanır. Game katmanı da
+    // MOUSE_SENS ile çarptığı için eskiden iki kez ölçekleniyordu ve
+    // 100 px'lik kaydırma 0.0009 rad'a düşüp ekran hiç dönmüyordu.
+    in.lookDX *= LOOK_SENS_MOBILE;
+    in.lookDY *= LOOK_SENS_MOBILE * (cfg_.settings.invertY ? -1.f : 1.f);
 
     // --- arayüz dokunmaları ---
     if (hud_.touch.inventoryTapped) {

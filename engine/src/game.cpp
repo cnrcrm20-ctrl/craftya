@@ -8,7 +8,7 @@
 namespace craftya {
 
 namespace {
-constexpr float MOUSE_SENS = 0.0022f;
+constexpr float MOUSE_SENS = 0.0022f;  // masaüstü fare (Game::update dışı)
 constexpr float REACH = 5.0f;          // blok erişim mesafesi
 }
 
@@ -35,6 +35,26 @@ Game::Game(uint64_t seed, bool generateTerrain)
     }
     body_.pos = {static_cast<float>(sx) + 0.5f, h + 2.0f, static_cast<float>(sz) + 0.5f};
     camera_.pos = body_.pos + Vec3f{0, 1.62f, 0};
+
+    // Spawn yönü: oyuncunun BURNU DUVARA BAKMASIN.
+    // 16 yönü tarayıp en uzağı gören yöne çevir (oyunun ilk izlenimi bu).
+    {
+        float bestClear = -1.f, bestYaw = 0.f;
+        for (int a = 0; a < 16; ++a) {
+            float yaw = a * (6.28318f / 16.f);
+            Vec3f dir{std::sin(yaw), 0.f, -std::cos(yaw)};
+            float clear = 0.f;
+            for (float t = 1.f; t <= 24.f; t += 1.f) {
+                Vec3f p{body_.pos.x + dir.x * t, body_.pos.y + 1.6f, body_.pos.z + dir.z * t};
+                if (Physics::collides(world_, AABB{{p.x - 0.3f, p.y - 0.8f, p.z - 0.3f},
+                                                  {p.x + 0.3f, p.y + 0.6f, p.z + 0.3f}}))
+                    break;
+                clear = t;
+            }
+            if (clear > bestClear) { bestClear = clear; bestYaw = yaw; }
+        }
+        if (bestClear >= 6.f) camera_.yaw = bestYaw;
+    }
     eco_.init(seed);
 }
 
@@ -56,8 +76,9 @@ void Game::update(float dt, const InputState& in) {
     }
 
     // -- bakış --
-    camera_.yaw += in.lookDX * MOUSE_SENS * settings_.touchSensitivity;
-    camera_.pitch -= in.lookDY * MOUSE_SENS * settings_.touchSensitivity;
+    // lookDX/lookDY artık Engine katmanında ölçeklenmiş geliyor (radyan).
+    camera_.yaw += in.lookDX;
+    camera_.pitch -= in.lookDY;
     const float maxPitch = 1.5533f;  // ~89 derece
     camera_.pitch = std::max(-maxPitch, std::min(maxPitch, camera_.pitch));
 
@@ -91,7 +112,11 @@ void Game::update(float dt, const InputState& in) {
     }
 
     // -- fizik --
-    Physics::move(world_, body_, dt);
+    MoveResult moveRes = Physics::move(world_, body_, dt);
+    // ÖNEMLİ: onGround güncellenmezse ivme hiç uygulanmıyor (accel=6 havada)
+    // ve oyuncu yürüyemiyordu. Fizik sonucu gövdeye yazılmalı.
+    body_.onGround = moveRes.onGround;
+    body_.inWater = moveRes.inWater;
 
     // dünyadan düşerse geri koy
     if (body_.pos.y < -20.f) {

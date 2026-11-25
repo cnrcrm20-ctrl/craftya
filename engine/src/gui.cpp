@@ -151,9 +151,25 @@ void Hud::setActionButton(int index, float cx, float cy, float radius, const std
 
 void Hud::onTouchDown(int pointerId, float x, float y) {
     // joystick
+    // hotbar: dokunulan yuvayı seç
+    if (hotbarRect_.contains(x, y)) {
+        float slot = hotbarRect_.h;
+        float rel = x - hotbarRect_.x;
+        int idx = static_cast<int>(rel / (slot + (hotbarRect_.w - slot * 9.f) / 8.f));
+        if (idx >= 0 && idx < 9) {
+            touch.hotbarTapped = true;
+            touch.hotbarIndex = idx;
+        }
+        hotbarPointer_ = pointerId;
+        return;
+    }
+
     if (joyPointer_ < 0) {
         float dx = x - joyCx_, dy = y - joyCy_;
-        if (std::sqrt(dx*dx + dy*dy) < joyRadius_ * 1.6f) {
+        // ÇOK cömert yakalama: parmak joystick'in neresine basarsa bassın çalışsın
+        // (ekranın sol alt çeyreği) — aksi halde ince bir halkaya basmak gerekiyordu.
+        bool inLeftBottom = (x < w_ * 0.45f) && (y > h_ * 0.45f) && (y < hotbarRect_.y - 2.f);
+        if (std::sqrt(dx*dx + dy*dy) < joyRadius_ * 1.9f || inLeftBottom) {
             joyPointer_ = pointerId;
             joyKnobX_ = x; joyKnobY_ = y;
             float len = std::sqrt(dx*dx + dy*dy);
@@ -188,19 +204,6 @@ void Hud::onTouchDown(int pointerId, float x, float y) {
             }
             return;
         }
-    }
-
-    // hotbar: dokunulan yuvayı seç
-    if (hotbarRect_.contains(x, y)) {
-        float slot = hotbarRect_.h;
-        float rel = x - hotbarRect_.x;
-        int idx = static_cast<int>(rel / (slot + (hotbarRect_.w - slot * 9.f) / 8.f));
-        if (idx >= 0 && idx < 9) {
-            touch.hotbarTapped = true;
-            touch.hotbarIndex = idx;
-        }
-        hotbarPointer_ = pointerId;
-        return;
     }
 
     // bakış

@@ -28,6 +28,8 @@ struct MoveResult {
     bool hitX = false, hitY = false, hitZ = false;
     bool landed = false;   // yere indi
     bool headHit = false;  // tavana çarptı
+    bool onGround = false; // kare sonunda zeminde mi
+    bool inWater = false;
 };
 
 class Physics {
