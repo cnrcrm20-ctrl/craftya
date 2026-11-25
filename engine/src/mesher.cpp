@@ -7,6 +7,11 @@
 
 namespace craftya {
 
+// 6 komşu yönü (ışık sızması için)
+static constexpr int DX6[6] = {1, -1, 0, 0, 0, 0};
+static constexpr int DY6[6] = {0, 0, 1, -1, 0, 0};
+static constexpr int DZ6[6] = {0, 0, 0, 0, 1, -1};
+
 namespace {
 
 // Bir yüzün 4 köşe konumu (0..1 birim kare), düzleme göre
@@ -183,8 +188,25 @@ void Mesher::build(World& world, Chunk& chunk, MeshData& out) {
                         float blk = static_cast<float>(world.blockLightAt(lwx, lwy, lwz)) / 15.f;
                         // gündüz skylight baskın, gece blok ışığı baskın
                         float lightLevel = std::max(sky, blk);
-                        if (lightLevel <= 0.f) lightLevel = 0.06f;   // tamamen karanlık değil
-                        lightLevel = 0.06f + lightLevel * 0.94f;
+                        // YANDAN AYDINLATMA: derin toprak/taş hücresi kapkaranlık olur.
+                        // Bu yüzler yandan bakıldığında (kamera alçakken) ekranın
+                        // büyük bölümünü kaplar → güneşe açık komşulardan ışık sızdır.
+                        if (lightLevel < 0.55f) {
+                            for (int dd = 0; dd < 6; ++dd) {
+                                if (dd == axis) continue;              // bakan yön zaten ölçüldü
+                                float nsky = static_cast<float>(world.skyLightAt(
+                                    lwx + DX6[dd], lwy + DY6[dd], lwz + DZ6[dd])) / 15.f;
+                                // yandan gelen ışık sönümlenir (2 hücre uzaklık etkisi)
+                                nsky *= 0.62f;
+                                if (nsky > lightLevel) lightLevel = nsky;
+                            }
+                        }
+                        // GAMA: ham ışık doğrusal; göz ve ekran için üsse çevir.
+                        // Bu olmadan yarık/mağara duvarları kapkara kalıyordu.
+                        lightLevel = std::pow(std::clamp(lightLevel, 0.f, 1.f), 0.62f);
+                        // Taban aydınlık: meşalesiz derin yerler ekranda delik gibi
+                        // görünmesin. (Yüz gölgelemesi bunun üstüne biner.)
+                        lightLevel = 0.40f + lightLevel * 0.60f;
                         if (id == GLOWSTONE || id == LAVA || id == TORCH) lightLevel = 1.f;
 
                         float light = lightLevel * faceShade;
@@ -212,7 +234,10 @@ void Mesher::build(World& world, Chunk& chunk, MeshData& out) {
                             bool s2 = solidAt(cor[k][0] / 2, cor[k][1] / 2, cor[k][2] / 2);
                             bool cr = solidAt(cor[k][0], cor[k][1], cor[k][2]) &&
                                       solidAt(cor[k][0] / 2, cor[k][1] / 2, cor[k][2] / 2);
+                            // AO köşe karartması. Taban ışıkla çarpıldığında
+                            // kapalı köşeler (0.55) siyaha yaklaşıyordu; tabanı yükselt.
                             float ao = AmbientOcclusion::vertexFactor(s1, s2, cr);
+                            ao = 0.78f + ao * 0.22f;   // yumuşat: 0.78..1.00
 
                             Vertex vtx{};
                             vtx.x = q[k].x; vtx.y = q[k].y; vtx.z = q[k].z;

@@ -1,5 +1,6 @@
 // Craftya Engine — ışık yayılımı uygulaması (BFS)
 #include "craftya/lighting.hpp"
+#include <vector>
 #include <cmath>
 #include <cstring>
 
@@ -129,6 +130,113 @@ void LightEngine::computeChunk(World& world, Chunk& chunk) {
                 chunk.setSkyLight(lx, ly, lz, s);
                 chunk.setBlockLight(lx, ly, lz, b);
             }
+}
+
+
+// ---------- bölgesel ışık: tek BFS, tüm bölge ----------
+// Neden gerekli: computeChunk tek chunk üzerinde çalışır ve komşu chunk
+// henüz üretilmemişse ışık oraya yayılamaz. Bölge bazlı hesap, sınırları
+// doğal olarak aşar ve yüzey kararması (ağaç altı / tepe gölgesi) oluşmaz.
+int LightEngine::computeRegion(World& world, ChunkPos center, int rx, int ry, int rz) {
+    // bölge sınırları (dünya koordinatı)
+    const int x0 = (center.x - rx) * CHUNK_W;
+    const int x1 = (center.x + rx + 1) * CHUNK_W;
+    const int y0 = (center.y - ry) * CHUNK_H;
+    const int y1 = (center.y + ry + 1) * CHUNK_H;
+    const int z0 = (center.z - rz) * CHUNK_W;
+    const int z1 = (center.z + rz + 1) * CHUNK_W;
+
+    const int WX = x1 - x0, WY = y1 - y0, WZ = z1 - z0;
+    if (WX <= 0 || WY <= 0 || WZ <= 0) return 0;
+
+    // bölge ışık tamponu
+    std::vector<uint8_t> skyBuf(static_cast<size_t>(WX) * WY * WZ, 0);
+    std::vector<uint8_t> blkBuf(static_cast<size_t>(WX) * WY * WZ, 0);
+    auto idx = [&](int x, int y, int z) {
+        return (static_cast<size_t>(y) * WZ + z) * WX + x;
+    };
+
+    // bölgede hangi chunk'lar var?
+    std::vector<Chunk*> chunks;
+    int litCount = 0;
+    for (int cz = center.z - rz; cz <= center.z + rz; ++cz)
+        for (int cx = center.x - rx; cx <= center.x + rx; ++cx)
+            for (int cy = center.y - ry; cy <= center.y + ry; ++cy) {
+                Chunk* c = world.chunkAt({cx, cy, cz});
+                if (c) chunks.push_back(c);
+            }
+    if (chunks.empty()) return 0;
+
+    struct Cell { int x, y, z; uint8_t level; };
+    std::deque<Cell> skyQ, blkQ;
+
+    // --- 1) tohumlama: gökyüzüne açık kolonlar ---
+    for (int z = 0; z < WZ; ++z) {
+        for (int x = 0; x < WX; ++x) {
+            bool blocked = false;
+            for (int y = WY - 1; y >= 0; --y) {
+                int wy = y0 + y;
+                BlockId id = world.getBlock(x0 + x, wy, z0 + z);
+                if (id != AIR && isOpaque(id)) blocked = true;
+                if (!blocked) {
+                    size_t i = idx(x, y, z);
+                    skyBuf[i] = 15;
+                    skyQ.push_back({x, y, z, 15});
+                }
+                uint8_t emit = blockLight(id);
+                if (emit > 0) {
+                    size_t i = idx(x, y, z);
+                    if (blkBuf[i] < emit) {
+                        blkBuf[i] = emit;
+                        blkQ.push_back({x, y, z, emit});
+                    }
+                }
+            }
+        }
+    }
+
+    // --- 2) BFS yayılım ---
+    auto spread = [&](std::deque<Cell>& q, std::vector<uint8_t>& buf, bool isSky) {
+        while (!q.empty()) {
+            Cell c = q.front(); q.pop_front();
+            for (int d = 0; d < 6; ++d) {
+                int nx = c.x + DX[d], ny = c.y + DY[d], nz = c.z + DZ[d];
+                if (nx < 0 || ny < 0 || nz < 0) continue;
+                if (nx >= WX || ny >= WY || nz >= WZ) continue;
+                BlockId nid = world.getBlock(x0 + nx, y0 + ny, z0 + nz);
+                if (isOpaque(nid)) continue;
+                int loss = (isSky && DY[d] == 1) ? 0 : 1;
+                int next = static_cast<int>(c.level) - loss;
+                if (next <= 0) continue;
+                size_t i = idx(nx, ny, nz);
+                if (buf[i] >= next) continue;
+                buf[i] = static_cast<uint8_t>(next);
+                q.push_back({nx, ny, nz, static_cast<uint8_t>(next)});
+            }
+        }
+    };
+    spread(skyQ, skyBuf, true);
+    spread(blkQ, blkBuf, false);
+
+    // --- 3) chunk'lara yaz ---
+    for (Chunk* c : chunks) {
+        ChunkPos cp{c->pos().x, c->pos().y, c->pos().z};
+        for (int ly = 0; ly < CHUNK_H; ++ly)
+            for (int lz = 0; lz < CHUNK_W; ++lz)
+                for (int lx = 0; lx < CHUNK_W; ++lx) {
+                    int wx = cp.x * CHUNK_W + lx;
+                    int wy = cp.y * CHUNK_H + ly;
+                    int wz = cp.z * CHUNK_W + lz;
+                    int bx = wx - x0, by = wy - y0, bz = wz - z0;
+                    if (bx < 0 || by < 0 || bz < 0 || bx >= WX || by >= WY || bz >= WZ) continue;
+                    size_t i = idx(bx, by, bz);
+                    c->setSkyLight(lx, ly, lz, skyBuf[i]);
+                    c->setBlockLight(lx, ly, lz, blkBuf[i]);
+                }
+        c->markLightReady();
+        ++litCount;
+    }
+    return litCount;
 }
 
 void LightEngine::onBlockChanged(World& world, int wx, int wy, int wz, BlockId oldId, BlockId newId) {

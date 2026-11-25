@@ -238,9 +238,11 @@ public:
             if (cheese > thr) return true;
         }
 
-        // yarık: dikey düzlem kesişimi (nadir, derin)
-        float rv = nRavine_.fbm2(wx * 0.0045f, wz * 0.0045f, 2);
-        if (std::fabs(rv) < 0.014f && wy < surface - 8 && depthFade > 0.3f) return true;
+        // yarık: dikey düzlem kesişimi — ÇOK nadir ve sığ.
+        // (eskiden spawn'ın hemen önünde dev bir taş yarık oluşuyordu)
+        float rv = nRavine_.fbm2(wx * 0.0032f, wz * 0.0032f, 2);
+        if (std::fabs(rv) < 0.0055f && wy < surface - 10 && wy > surface - 26 &&
+            depthFade > 0.35f) return true;
 
         return false;
     }

@@ -19,6 +19,13 @@ public:
     // chunk yüklendiğinde ışığı hesapla
     static void computeChunk(World& world, Chunk& chunk);
 
+    // BÖLGESEL ışık: birden çok chunk'ı TEK BFS ile aydınlatır.
+    // Chunk başına ayrı hesaplamak yanlıştır: komşu chunk henüz yokken
+    // ışık sınırı geçemez ve yüzey kapkara kalır.
+    // center: bölgenin merkez chunk'ı, rx/ry/rz: yarıçap (chunk).
+    // Dönen: aydınlatılan chunk sayısı.
+    static int computeRegion(World& world, ChunkPos center, int rx, int ry, int rz);
+
     // bir blok değiştiğinde yerel ışığı güncelle (artımlı BFS silme + ekleme)
     static void onBlockChanged(World& world, int wx, int wy, int wz, BlockId oldId, BlockId newId);
 

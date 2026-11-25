@@ -63,45 +63,67 @@ struct Framebuffer {
 };
 
 // ---------------- köşe ----------------
-struct SV {
-    float x, y;         // NDC
-    float invW;         // 1/w — perspektif doğru interpolasyon anahtarı
-    float viewDepth;    // w (kamera düzleminden uzaklık)
-    float u, v;
-    float light;
-    float fog;          // 0..1 (1 = tam sis)
+// Kamera uzayında tutulan vertex: yakın düzlem kırpması burada yapılır.
+struct CVert {
+    float cx, cy, cz;   // kamera uzayı konum
+    float w;            // view uzayı derinliği (projeksiyonun w'si)
+    float u, v, light, fog;
     bool valid = false;
 };
 
+struct SV {
+    float x, y;         // NDC
+    float invW;         // 1/w
+    float viewDepth;    // w
+    float u, v;
+    float light;
+    float fog;
+    bool valid = false;
+};
+
+// yakın düzlem: bu derinliğin önündeki parçalar kırpılır
+static constexpr float kNearZ = 0.08f;
+
 static Mat4 g_viewProj;
 
-static SV project(const Vec3f& p, const Vec3f& camPos, const Camera& cam,
-                  float u, float v, float light) {
-    SV o;
-    // dünya → kamera
+// dünya → kamera uzayı (kırpma öncesi)
+static CVert camVert(const Vec3f& p, const Vec3f& camPos,
+                     float u, float v, float light) {
+    CVert o;
     Mat4 vp = g_viewProj;
     float cx = p.x, cy = p.y, cz = p.z;
-    float x = vp.m[0]*cx + vp.m[4]*cy + vp.m[8]*cz  + vp.m[12];
-    float y = vp.m[1]*cx + vp.m[5]*cy + vp.m[9]*cz  + vp.m[13];
-    float z = vp.m[2]*cx + vp.m[6]*cy + vp.m[10]*cz + vp.m[14];
-    float w = vp.m[3]*cx + vp.m[7]*cy + vp.m[11]*cz + vp.m[15];
-    if (w < 0.05f) return o;   // kameranın arkasında
-    float invW = 1.f / w;
-    o.x = x * invW;
-    o.y = y * invW;
-    o.invW = invW;
-    o.viewDepth = w;
-    (void)z;
+    o.cx = vp.m[0]*cx + vp.m[4]*cy + vp.m[8]*cz  + vp.m[12];
+    o.cy = vp.m[1]*cx + vp.m[5]*cy + vp.m[9]*cz  + vp.m[13];
+    o.cz = vp.m[2]*cx + vp.m[6]*cy + vp.m[10]*cz + vp.m[14];
+    o.w  = vp.m[3]*cx + vp.m[7]*cy + vp.m[11]*cz + vp.m[15];
     o.u = u; o.v = v; o.light = light;
-    // sis: kameradan uzaklık
     float dx = cx - camPos.x, dy = cy - camPos.y, dz = cz - camPos.z;
     float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
     const float fogStart = FOG_START_CHUNK * CHUNK_W;
     const float fogEnd = FOG_END_CHUNK * CHUNK_W;
     o.fog = std::clamp((dist - fogStart) / (fogEnd - fogStart), 0.f, 1.f);
     o.valid = true;
-    (void)cam;
     return o;
+}
+
+// kamera uzayı → ekran
+static SV toScreen(const CVert& c) {
+    SV o;
+    if (c.w < kNearZ) return o;
+    float invW = 1.f / c.w;
+    o.x = c.cx * invW;
+    o.y = c.cy * invW;
+    o.invW = invW;
+    o.viewDepth = c.w;
+    o.u = c.u; o.v = c.v; o.light = c.light; o.fog = c.fog;
+    o.valid = true;
+    return o;
+}
+
+static SV project(const Vec3f& p, const Vec3f& camPos, const Camera& cam,
+                  float u, float v, float light) {
+    (void)cam;
+    return toScreen(camVert(p, camPos, u, v, light));
 }
 
 // ---------------- triangle raster ----------------
@@ -208,17 +230,96 @@ static void drawTri(Framebuffer& fb, const SV& a, const SV& b, const SV& c,
             // NOT: lt zaten mesher'dan geliyor (skyLight * faceShade * AO).
             // Burada ikinci kez güneş/normal çarpmak görüntüyü karartıyordu.
             lt = getenv("SIM_FORCELIGHT") ? 1.0f : (0.05f + lt * 0.95f);
+            if (getenv("SIM_MARKDARK") && lt < 0.35f) {
+                // teshis: karanlik pikselleri KIRMIZI isaretle
+                fb.putA(px, py, 1.f, 0.f, 0.f, 1.f);
+                fb.depth[di] = depth;
+                continue;
+            }
             r *= lt; g *= lt; bl *= lt;
             // sis karışımı
             r = r + (fogCol[0] - r) * fg;
             g = g + (fogCol[1] - g) * fg;
             bl = bl + (fogCol[2] - bl) * fg;
 
+            if (getenv("SIM_DEBUGPIX") && px == 400 && py == 440) {
+                float dxs = uu * 1024.f - 73.f, dys = vv * 1024.f - 11.f;
+                std::printf("[px400,440] u=%.5f v=%.5f | atlas piksel=%.2f,%.2f | "
+                            "lt=%.3f ton=%.1f depth=%.1f\n",
+                            uu, vv, uu * 1024.f, vv * 1024.f,
+                            lt, r * 10.f,
+                            depth);
+                int ax = (int)(uu * 1024.f), ay = (int)(vv * 1024.f);
+                if (ax >= 0 && ay >= 0 && ax < 1024 && ay < 1024) {
+                    size_t i2 = ((size_t)ay * atlas.width + ax) * 4;
+                    std::printf("   atlas RGBA = %d,%d,%d,%d\n",
+                                atlas.pixels[i2], atlas.pixels[i2+1],
+                                atlas.pixels[i2+2], atlas.pixels[i2+3]);
+                }
+                (void)dxs; (void)dys;
+            }
             // cutout: alpha>=0.5 pikseller TAM OPAK yazılır.
             // Karışım yapılırsa yaprak kenarları siyah zeminle karışıp leke oluyor.
             fb.putA(px, py, r, g, bl, 1.f);
         }
     }
+}
+
+// ---------------- yakın düzlem kırpma ----------------
+// Kamera arkasında kalan köşe yüzünden üçgenin TAMAMEN kaybolmasını engeller.
+// (Eskiden tek bir vertex w<0.05 ise kuad tamamen atılıyordu → kameranın
+//  altındaki büyük zemin yüzleri siyah kalıyordu.)
+struct CVList { CVert v[5]; int n = 0; };
+
+static inline CVert lerpCV(const CVert& a, const CVert& b, float t) {
+    CVert o;
+    o.cx = a.cx + (b.cx - a.cx) * t;
+    o.cy = a.cy + (b.cy - a.cy) * t;
+    o.cz = a.cz + (b.cz - a.cz) * t;
+    o.w  = a.w  + (b.w  - a.w)  * t;
+    o.u  = a.u  + (b.u  - a.u)  * t;
+    o.v  = a.v  + (b.v  - a.v)  * t;
+    o.light = a.light + (b.light - a.light) * t;
+    o.fog   = a.fog   + (b.fog   - a.fog)   * t;
+    o.valid = true;
+    return o;
+}
+
+// Sutherland–Hodgman: tek üçgeni yakın düzleme göre kırp (0..2 üçgen çıkabilir)
+static int clipNear(const CVert& a, const CVert& b, const CVert& c,
+                    CVert& o0, CVert& o1, CVert& o2,
+                    CVert& o3, CVert& o4, CVert& o5) {
+    CVert in[3] = {a, b, c};
+    CVert out[5];
+    int n = 0;
+    for (int i = 0; i < 3; ++i) {
+        const CVert& cur = in[i];
+        const CVert& nxt = in[(i + 1) % 3];
+        bool curIn = cur.w >= kNearZ;
+        bool nxtIn = nxt.w >= kNearZ;
+        if (curIn) out[n++] = cur;
+        if (curIn != nxtIn) {
+            float t = (kNearZ - cur.w) / (nxt.w - cur.w);
+            out[n++] = lerpCV(cur, nxt, t);
+        }
+    }
+    if (n < 3) return 0;
+    o0 = out[0]; o1 = out[1]; o2 = out[2];
+    if (n == 4) { o3 = out[0]; o4 = out[2]; o5 = out[3]; return 2; }
+    return 1;
+}
+
+// kuadı iki üçgene bölerek kırpıp çiz
+static void drawQuadClipped(Framebuffer& fb, const CVert& a, const CVert& b,
+                            const CVert& c, const CVert& d,
+                            const Image& atlas, const float fogCol[3], bool wire = false) {
+    CVert t0, t1, t2, t3, t4, t5;
+    int n1 = clipNear(a, b, c, t0, t1, t2, t3, t4, t5);
+    if (n1 >= 1) drawTri(fb, toScreen(t0), toScreen(t1), toScreen(t2), atlas, fogCol, wire);
+    if (n1 == 2) drawTri(fb, toScreen(t3), toScreen(t4), toScreen(t5), atlas, fogCol, wire);
+    int n2 = clipNear(a, c, d, t0, t1, t2, t3, t4, t5);
+    if (n2 >= 1) drawTri(fb, toScreen(t0), toScreen(t1), toScreen(t2), atlas, fogCol, wire);
+    if (n2 == 2) drawTri(fb, toScreen(t3), toScreen(t4), toScreen(t5), atlas, fogCol, wire);
 }
 
 // ---------------- mob küpü çiz ----------------
@@ -328,6 +429,12 @@ static void drawBox(Framebuffer& fb, const Box& box, const Camera& cam,
                     fb.depth[di] = depth;
                     float lt = (w0*a.light*a.invW + w1v*b.light*b.invW + w2*c.light*c.invW)/iw;
                     lt = getenv("SIM_FORCELIGHT") ? 1.0f : (0.05f + lt * 0.95f);
+            if (getenv("SIM_MARKDARK") && lt < 0.35f) {
+                // teshis: karanlik pikselleri KIRMIZI isaretle
+                fb.putA(px, py, 1.f, 0.f, 0.f, 1.f);
+                fb.depth[di] = depth;
+                continue;
+            }
                     float fg = (w0*a.fog*a.invW + w1v*b.fog*b.invW + w2*c.fog*c.invW)/iw;
                     float rr = lr, gg = lg, bb = lb;
                     if (box.texKind) {
@@ -418,13 +525,15 @@ int main(int argc, char** argv) {
                 if (col.biome == worldgen::Biome::Ocean) continue;
                 // düzlük ölç: çevredeki yükseklik farkı
                 float hmin = 1e9f, hmax = -1e9f;
-                for (int dz = -6; dz <= 6; dz += 3)
-                    for (int dx = -6; dx <= 6; dx += 3) {
+                for (int dz = -10; dz <= 10; dz += 2)
+                    for (int dx = -10; dx <= 10; dx += 2) {
                         float h = world.heightAt(x + dx, z + dz);
                         hmin = std::min(hmin, h); hmax = std::max(hmax, h);
                     }
-                float flat = -(hmax - hmin);
-                float score = flat * 6.f - static_cast<float>(r) * 0.03f;
+                // 21x21 alanda 3 bloktan fazla düşüş varsa orada yarık/uçurum var
+                float flat = -(hmax - hmin) * 3.f;
+                float score = flat * 4.f - static_cast<float>(r) * 0.03f;
+                if (hmax - hmin > 3.f) score -= 70.f;   // yarık / uçurum: cezalandır
                 // yakında su/manzara olması bonus (görsel zenginlik)
                 if (col.biome == worldgen::Biome::Plains) score += 10.f;
                 if (col.biome == worldgen::Biome::Forest) score += 4.f;
@@ -460,16 +569,25 @@ int main(int argc, char** argv) {
         // SPAWN çevresini kapsayacak şekilde yükle (sabit 0,0 değil!)
         int scx = static_cast<int>(std::floor(g_penX / CHUNK_W));
         int scz = static_cast<int>(std::floor(g_penZ / CHUNK_W));
+        // 1) TÜM chunk'ları oluştur (ışık komşuya yayılabilsin)
+        for (int cz = scz - 12; cz <= scz + 12; ++cz)
+            for (int cx = scx - 12; cx <= scx + 12; ++cx)
+                for (int cy = 0; cy <= 6; ++cy)
+                    world.getOrCreate({cx, cy, cz});
+
+        // 2) BÖLGESEL ışık: tek BFS ile 25x25 chunk aydınlatılır.
+        //    Chunk başına ayrı hesap yapılırsa ışık sınırı geçemez ve
+        //    yüzey/ağaç altı kapkara kalır (asıl siyah alan hatası buydu).
+        int lit = LightEngine::computeRegion(world, {scx, 3, scz}, 12, 3, 12);
+        std::printf("  isik: %d chunk aydinlatildi\n", lit);
+
+        // 3) mesh'leri üret
         for (int cz = scz - 12; cz <= scz + 12; ++cz)
             for (int cx = scx - 12; cx <= scx + 12; ++cx)
                 for (int cy = 0; cy <= 6; ++cy) {
                     ChunkPos cp{cx, cy, cz};
-                    Chunk* c = world.getOrCreate(cp);
+                    Chunk* c = world.chunkAt(cp);
                     if (!c) continue;
-                    if (!c->lightReady()) {
-                        LightEngine::computeChunk(world, *c);
-                        c->markLightReady();
-                    }
                     ChunkMesh cm;
                     cm.pos = cp;
                     Mesher::build(world, *c, cm.data);
@@ -606,34 +724,23 @@ int main(int argc, char** argv) {
             if (d2 > (5.6f * 16.f) * (5.6f * 16.f)) continue;
             const MeshData& mesh = cm.data;
 
-            for (size_t i = 0; i + 3 < mesh.opaque.size(); i += 4) {
-                const Vertex* v = &mesh.opaque[i];
-                SV p0 = project({cp.x*16.f + v[0].x, cp.y*16.f + v[0].y, cp.z*16.f + v[0].z},
-                                cam.pos, cam, v[0].u, v[0].v, v[0].light);
-                if (!p0.valid) continue;
-                SV p1 = project({cp.x*16.f + v[1].x, cp.y*16.f + v[1].y, cp.z*16.f + v[1].z},
-                                cam.pos, cam, v[1].u, v[1].v, v[1].light);
-                SV p2 = project({cp.x*16.f + v[2].x, cp.y*16.f + v[2].y, cp.z*16.f + v[2].z},
-                                cam.pos, cam, v[2].u, v[2].v, v[2].light);
-                SV p3 = project({cp.x*16.f + v[3].x, cp.y*16.f + v[3].y, cp.z*16.f + v[3].z},
-                                cam.pos, cam, v[3].u, v[3].v, v[3].light);
-                drawTri(fb, p0, p1, p2, atlas, sky);
-                drawTri(fb, p0, p2, p3, atlas, sky);
-            }
-            for (size_t i = 0; i + 3 < mesh.transparent.size(); i += 4) {
-                const Vertex* v = &mesh.transparent[i];
-                SV p0 = project({cp.x*16.f + v[0].x, cp.y*16.f + v[0].y, cp.z*16.f + v[0].z},
-                                cam.pos, cam, v[0].u, v[0].v, v[0].light);
-                if (!p0.valid) continue;
-                SV p1 = project({cp.x*16.f + v[1].x, cp.y*16.f + v[1].y, cp.z*16.f + v[1].z},
-                                cam.pos, cam, v[1].u, v[1].v, v[1].light);
-                SV p2 = project({cp.x*16.f + v[2].x, cp.y*16.f + v[2].y, cp.z*16.f + v[2].z},
-                                cam.pos, cam, v[2].u, v[2].v, v[2].light);
-                SV p3 = project({cp.x*16.f + v[3].x, cp.y*16.f + v[3].y, cp.z*16.f + v[3].z},
-                                cam.pos, cam, v[3].u, v[3].v, v[3].light);
-                drawTri(fb, p0, p1, p2, atlas, sky);
-                drawTri(fb, p0, p2, p3, atlas, sky);
-            }
+            // kuad → 4 kamera-uzayı köşesi → yakın düzlem kırpması → çiz
+            auto quad = [&](const Vertex* v, bool wire) {
+                CVert q[4];
+                bool front = false;
+                for (int k = 0; k < 4; ++k)
+                    q[k] = camVert({cp.x*16.f + v[k].x, cp.y*16.f + v[k].y,
+                                    cp.z*16.f + v[k].z},
+                                   cam.pos, v[k].u, v[k].v, v[k].light);
+                for (int k = 0; k < 4; ++k) if (q[k].w >= kNearZ) { front = true; break; }
+                if (!front) return;      // kuadın tamamı kameranın arkasında
+                drawQuadClipped(fb, q[0], q[1], q[2], q[3], atlas, sky, wire);
+            };
+
+            for (size_t i = 0; i + 3 < mesh.opaque.size(); i += 4)
+                quad(&mesh.opaque[i], false);
+            for (size_t i = 0; i + 3 < mesh.transparent.size(); i += 4)
+                quad(&mesh.transparent[i], false);
             ++drawnChunks;
         }
 
