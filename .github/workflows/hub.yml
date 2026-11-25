@@ -26,9 +26,13 @@ on:
         required: false
         default: ''
   push:
-    # Sadece bu dosya değiştiğinde. GitHub, içinde push tetikleyicisi olmayan
-    # yeni workflow'u bazen hiç kaydetmiyor (workflow_dispatch 404 veriyor).
-    paths: ['.github/workflows/hub.yml']
+    # Workflow dosyası değişince kaydolur; sunucu config/render düzeltmeleri
+    # de doğrudan yeni deploy testi başlatabilsin.
+    paths:
+      - '.github/workflows/hub.yml'
+      - 'scripts/render.py'
+      - 'config/rooms/**'
+      - 'docker-compose.hub.yml'
   schedule:
     # Emniyet ağı: zincir bir şekilde koparsa 6 saatte bir yeniden başlat
     - cron: '0 */6 * * *'
