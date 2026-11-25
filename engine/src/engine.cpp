@@ -437,6 +437,22 @@ void Engine::tickPlaying(float dt) {
         audio_.play(audio_.sfx(SfxId::Jump), 0.6f);
     }
 
+    // ---- hedef (nişangâh) güncelle: mobil savaş geri bildirimi ----
+    {
+        Vec3f eye = game_->camera().pos;
+        Vec3f fwd = game_->camera().forward();
+        auto* t = game_->ecosystem().findTarget(eye, fwd, 3.4f);
+        hud_.touch.hasTarget = (t != nullptr);
+        if (t) {
+            const MobDef& def = mobDef(t->type);
+            hud_.touch.targetMaxHealth = def.health;
+            hud_.touch.targetMobHealth = t->health;
+            hud_.touch.targetHealth01 =
+                def.health > 0.f ? std::clamp(t->health / def.health, 0.f, 1.f) : 0.f;
+        }
+        if (hud_.touch.hitFlash > 0.f) hud_.touch.hitFlash -= dt;
+    }
+
     game_->update(dt, in);
     applySettings();
 

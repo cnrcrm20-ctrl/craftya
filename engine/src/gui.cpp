@@ -272,8 +272,25 @@ void Hud::build(DrawList& out, const Inventory& inv, float health, float hunger,
 
     // ---- nişangâh ----
     float cx = w_ * 0.5f, cy = h_ * 0.5f;
-    out.rect(Rect{cx - 11*s2, cy - 1.f*s2, 22*s2, 2.f*s2}, Color{1,1,1,0.8f});
-    out.rect(Rect{cx - 1.f*s2, cy - 11*s2, 2.f*s2, 22*s2}, Color{1,1,1,0.8f});
+    // Hedef varsa nişangâh kırmızıya döner (mobil savaş geri bildirimi).
+    Color cross = touch.hasTarget ? Color{1.f, 0.35f, 0.28f, 0.95f}
+                                  : Color{1, 1, 1, 0.8f};
+    if (touch.hitFlash > 0.f) cross = Color{1.f, 0.85f, 0.3f, 1.f};
+    out.rect(Rect{cx - 11*s2, cy - 1.f*s2, 22*s2, 2.f*s2}, cross);
+    out.rect(Rect{cx - 1.f*s2, cy - 11*s2, 2.f*s2, 22*s2}, cross);
+
+    // ---- hedef can barı: nişangâhın hemen üstünde ----
+    if (touch.hasTarget) {
+        float bw = 96.f * s2, bh = 7.f * s2;
+        float bx = cx - bw * 0.5f, by = cy - 26.f * s2;
+        out.rect(Rect{bx - 1.f, by - 1.f, bw + 2.f, bh + 2.f}, Color{0, 0, 0, 0.65f});
+        out.rect(Rect{bx, by, bw, bh}, Color{0.25f, 0.09f, 0.09f, 0.9f});
+        float f = std::clamp(touch.targetHealth01, 0.f, 1.f);
+        Color hp = f > 0.5f ? Color{0.42f, 0.85f, 0.36f, 1}
+                 : f > 0.25f ? Color{0.95f, 0.75f, 0.25f, 1}
+                             : Color{0.92f, 0.28f, 0.24f, 1};
+        out.rect(Rect{bx, by, bw * f, bh}, hp);
+    }
 
     // ---- can + açlık barı: hotbar'ın HEMEN ÜSTÜNDE ----
     float heart = m * 0.034f;

@@ -74,6 +74,12 @@ public:
     // oyun içi dokunmatik kontroller (sol joystick + sağ bakış + butonlar)
     struct TouchLayout {
         Vec3f moveAxis{0, 0, 0};     // -1..1 (x=sağ, z=ileri)
+        // --- nişan / hedef (mobil savaş geri bildirimi) ---
+        bool  hasTarget = false;     // önünde canlı var
+        float targetHealth01 = 1.f;  // hedefin can oranı (0..1)
+        float targetMobHealth = 0.f; // ham can
+        float targetMaxHealth = 20.f;
+        float hitFlash = 0.f;        // vuruş anı parlaması (sn, azalır)
         float lookDx = 0.f, lookDy = 0.f;
         bool jumpHeld = false;
         bool sprintHeld = false;

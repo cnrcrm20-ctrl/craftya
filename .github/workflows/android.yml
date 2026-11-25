@@ -145,6 +145,21 @@ jobs:
             exit 1
           fi
 
+      - name: APK ozeti (is ozetine yaz)
+        run: |
+          APK=$(ls /tmp/apkout/*.apk | head -1)
+          {
+            echo "### Craftya APK dogrulama"
+            echo ""
+            echo "| Kontrol | Sonuc |"
+            echo "|---|---|"
+            echo "| Dosya | \`$(basename "$APK")\` |"
+            echo "| Boyut | $(stat -c%s "$APK") bayt |"
+            echo "| libcraftya.so | $(unzip -l "$APK" | grep -c 'libcraftya.so') adet |"
+            echo "| ANativeActivity_onCreate (acilabilirlik) | $(grep -c 'ANativeActivity_onCreate' /tmp/syms.txt 2>/dev/null || echo '?') |"
+            echo "| dex (hasCode=false beklenir) | $(unzip -l "$APK" | grep -cE 'classes[0-9]*\.dex') |"
+          } >> $GITHUB_STEP_SUMMARY
+
       - name: APK artefakt
         uses: actions/upload-artifact@v4
         with:

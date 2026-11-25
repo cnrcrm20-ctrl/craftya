@@ -1498,6 +1498,31 @@ static int test_hunting() {
     return 0;
 }
 
+// ---------------------------------------------------------------- HUD nişangâh
+// Mobilde "KIR" butonu canlıya nişan alınca savaş butonuna dönüşmeli:
+// nişangâh kırmızıya döner ve hedefin can barı çizilir.
+static int test_aim_hud() {
+    group("nisangah / hedef gostergesi");
+
+    Hud h;
+    h.resize(854.f, 480.f, 2.f);
+    Inventory inv;
+    inv.add(STONE, 64);
+
+    DrawList plain;
+    h.build(plain, inv, 20.f, 20.f, 60.f, Vec3f{0, 70, 0}, 20, 0, 0.f);
+
+    h.touch.hasTarget = true;
+    h.touch.targetHealth01 = 0.5f;
+    h.touch.targetMobHealth = 10.f;
+    h.touch.targetMaxHealth = 20.f;
+    DrawList aimed;
+    h.build(aimed, inv, 20.f, 20.f, 60.f, Vec3f{0, 70, 0}, 20, 0, 0.f);
+
+    check(aimed.size() > plain.size(), "hedef varken ek oge cizildi (can bari)");
+    return 0;
+}
+
 int main() {
     std::printf("=== Craftya genisletilmis sistem testleri ===\n");
     testJson();
@@ -1525,6 +1550,8 @@ int main() {
     g_pass += 11;
     g_fail += test_hunting();
     g_pass += 6;
+    g_fail += test_aim_hud();
+    g_pass += 1;
 
     std::printf("\n----------------------------------------\n");
     std::printf("GECEN: %d   BASARISIZ: %d\n", g_pass, g_fail);
