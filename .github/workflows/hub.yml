@@ -228,8 +228,21 @@ jobs:
           fi
           echo "--- oyunda teyit: /lp user <isim> info ---"
 
+      - name: Tünel anahtarı durumu
+        id: playit-key
+        env:
+          PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
+        run: |
+          if [ -n "$PLAYIT_SECRET" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "Playit anahtarı tanımlı (değer gösterilmiyor)"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Playit anahtarı yok — dış IP/tünel kurulamaz"
+          fi
+
       - name: Tünel (playit) — dışarıdan erişim
-        if: ${{ env.PLAYIT_SECRET != '' }}
+        if: ${{ steps.playit-key.outputs.present == 'true' }}
         env:
           PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
         run: |
