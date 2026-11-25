@@ -2,6 +2,7 @@
 // Sorumluluk: pencere/yüzey yaşam döngüsü, girdi, ana döngü.
 // Tüm oyun mantığı engine/ içinde; bu dosya ince bir kabuk.
 #include <android_native_app_glue.h>
+#include <jni.h>
 #include <android/log.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
@@ -15,6 +16,7 @@
 #include "craftya/atlas.hpp"
 #include "gles_backend.hpp"
 #include "ui_renderer.hpp"
+#include "audio_android.hpp"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  "Craftya", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Craftya", __VA_ARGS__)
@@ -44,12 +46,56 @@ struct AppState {
     // dünyanın ilk kez çizildiği an (yükleme ekranı için)
     double worldShownAt = 0.0;
     double bootAt = 0.0;
+    // ses
+    AndroidAudio audio;
+    std::vector<int16_t> mixBuf;      // stereo interleaved karıştırma tamponu
+    // titreşim
+    int64_t lastVibrateAt = 0;
 };
+
+// ---- ses karıştırma köprüsü (AAudio callback'ten çağrılır) ----
+AppState* g_audioState = nullptr;
+void mixAudio(int16_t* out, int frames) {
+    if (!g_audioState) return;
+    AppState& st = *g_audioState;
+    if (!st.engineReady) return;
+    st.mixBuf.resize(static_cast<size_t>(frames) * 2, 0);
+    st.engine.audio().mix(st.mixBuf.data(), frames);
+}
 
 double nowSeconds() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
+}
+
+// ---- titreşim (JNI, ek izin gerekmez: VIBRATE normalde otomatik) ----
+void vibrate(android_app* app, int ms) {
+    if (!app || !app->activity || !app->activity->vm || !app->activity->clazz) return;
+    JNIEnv* env = nullptr;
+    JavaVM* vm = app->activity->vm;
+    if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) return;
+    jobject activity = app->activity->clazz;
+    jclass cls = env->GetObjectClass(activity);
+    if (cls) {
+        jmethodID mid = env->GetMethodID(cls, "getSystemService",
+                                        "(Ljava/lang/String;)Ljava/lang/Object;");
+        jfieldID fid = env->GetStaticFieldID(cls, "VIBRATOR_SERVICE", "Ljava/lang/String;");
+        if (mid && fid) {
+            jstring svc = static_cast<jstring>(env->GetStaticObjectField(cls, fid));
+            jobject vib = env->CallObjectMethod(activity, mid, svc);
+            if (vib) {
+                jclass vc = env->GetObjectClass(vib);
+                jmethodID vm2 = env->GetMethodID(vc, "vibrate", "(J)V");
+                if (vm2) env->CallVoidMethod(vib, vm2, static_cast<jlong>(ms));
+                env->DeleteLocalRef(vc);
+                env->DeleteLocalRef(vib);
+            }
+            if (svc) env->DeleteLocalRef(svc);
+        }
+        env->DeleteLocalRef(cls);
+    }
+    vm->DetachCurrentThread();
 }
 
 void handleCmd(android_app* app, int32_t cmd) {
@@ -72,6 +118,9 @@ void handleCmd(android_app* app, int32_t cmd) {
             if (!st->engineReady) {
                 st->engine.init(st->cfg);
                 st->engineReady = true;
+                // ses çıkışını başlat (AAudio yoksa sessiz devam eder)
+                g_audioState = st;
+                st->audio.start(&mixAudio, 48000);
                 LOGI("motor hazir");
             }
             int w = ANativeWindow_getWidth(app->window);
@@ -286,9 +335,20 @@ void androidMain(android_app* app) {
         st.fpsAvg = st.fpsAvg * 0.95f + (1.f / dt) * 0.05f;
 
         st.engine.update(dt);
+        // dokunsal geri bildirim (blok kırma/koyma)
+        float vib = st.engine.consumeVibration();
+        if (vib > 0.f && st.app && st.app->activity && st.app->activity->vm) {
+            int64_t now = static_cast<int64_t>(t * 1000.0);
+            if (now - st.lastVibrateAt > 60) {   // spam koruması
+                st.lastVibrateAt = now;
+                vibrate(st.app, static_cast<int>(vib * 1000.f));
+            }
+        }
         renderFrame(st);
     }
 
+    st.audio.shutdown();
+    g_audioState = nullptr;
     for (auto& kv : st.gpuMeshes) st.gl.freeMesh(kv.second);
     st.gpuMeshes.clear();
     st.engine.shutdown();

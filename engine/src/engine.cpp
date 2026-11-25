@@ -405,8 +405,37 @@ void Engine::tickPlaying(float dt) {
         hud_.touch.hotbarIndex = -1;
     }
 
+    // --- SES + TİTREŞİM (mobil geri bildirim) ---
+    // Motor ses kütüphanesi vardı ama hiçbir yerde çalınmıyordu: oyun sessizdi.
+    if (in.breakBlock) {
+        audio_.play(audio_.sfx(SfxId::Break), 0.85f);
+        vibration_ = 0.05f;   // 50 ms titreşim
+    }
+    if (in.placeBlock) {
+        audio_.play(audio_.sfx(SfxId::Place), 0.8f);
+        vibration_ = 0.03f;
+    }
+    if (in.jump && game_->player().onGround) {
+        audio_.play(audio_.sfx(SfxId::Jump), 0.6f);
+    }
+
     game_->update(dt, in);
     applySettings();
+
+    // yürüme sesi: zeminde ve hız varsa adım aralığıyla
+    {
+        const Body& pb = game_->player();
+        float hspeed = std::sqrt(pb.vel.x * pb.vel.x + pb.vel.z * pb.vel.z);
+        if (pb.onGround && hspeed > 1.2f) {
+            stepTimer_ += dt * (hspeed / 4.6f);
+            if (stepTimer_ > 0.42f) {
+                stepTimer_ = 0.f;
+                audio_.play(audio_.sfx(SfxId::Step), 0.45f);
+            }
+        } else {
+            stepTimer_ = 0.f;
+        }
+    }
 
     // varlıklar
     EntityId player = INVALID_ENTITY;

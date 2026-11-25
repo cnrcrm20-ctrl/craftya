@@ -35,6 +35,7 @@ add_library(craftya SHARED
         android_main.cpp
         gles_backend.cpp
         ui_renderer.cpp
+        audio_android.cpp
         ${GLUE_SRC}
         ${ENGINE_DIR}/src/json.cpp
         ${ENGINE_DIR}/src/lighting.cpp
@@ -60,12 +61,14 @@ target_include_directories(craftya PRIVATE
         ${ENGINE_DIR}/include
         ${GLUE_DIR})
 
+# AAudio yalnızca API 26+ var; API 24/25'te ön işlemciyle kapatılır.
 target_link_libraries(craftya
         android
         log
         EGL
         GLESv3
         m
+        aaudio
 )
 
 # ---------------------------------------------------------------------------

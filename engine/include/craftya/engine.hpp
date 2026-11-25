@@ -65,6 +65,8 @@ public:
     Hud& hud() { return hud_; }
     MenuSystem& menus() { return menus_; }
     AudioMixer& audio() { return audio_; }
+    // Android kabuğu her karede çağırır: >0 ise cihazı titretir ve sıfırlar
+    float consumeVibration() { float v = vibration_; vibration_ = 0.f; return v; }
     MeshNetwork& net() { return mesh_; }
     World2& entities() { return entities_; }
     Inventory& inventory() { return inv_; }
@@ -123,6 +125,10 @@ private:
     float dpi_ = 1.f;
     float autoSaveTimer_ = 0.f;
     float sessionSeconds_ = 0.f;
+    // mobil geri bildirim
+    float stepTimer_ = 0.f;      // yürüme sesi aralığı
+    float vibration_ = 0.f;      // kalan titreşim süresi (sn)
+
     uint8_t mode_ = 0;
     uint8_t localDevice_ = 1;
     uint32_t seed_ = 0;
