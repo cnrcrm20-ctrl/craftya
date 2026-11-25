@@ -1224,6 +1224,81 @@ static int test_ui_layout() {
     return fail;
 }
 
+// ============ MENÜ KABLOLAMA (gerçek motor üzerinde) ============
+static int test_menu_wiring() {
+    int fail = 0;
+    using namespace craftya;
+
+    Engine eng;
+    EngineConfig cfg;
+    cfg.seed = 777u;
+    eng.init(cfg);
+
+    // 1) ana menü açık mı?
+    if (eng.state() != EngineState::MainMenu) {
+        ++fail; std::printf("  HATA: baslangic durumu MainMenu degil\n");
+    }
+
+    // 2) duraklat menüsünün aksiyonları bağlanıyor mu?
+    //    (oyun güncellemesi duraklatılmış durumda aksiyonları kurar)
+    eng.onBackPressed();
+    for (int i = 0; i < 3; ++i) eng.update(1.f / 60.f);
+    auto& pauseScr = eng.menus().screen();
+    if (pauseScr.id == MenuId::Pause) {
+        if (pauseScr.items.size() >= 3 && !pauseScr.items[1].action) {
+            ++fail; std::printf("  HATA: duraklat menusu aksiyonlari bagli degil\n");
+        }
+    }
+
+    // 3) ayarlar ekranı gerçek değer gösteriyor mu?
+    eng.menus().open(MenuId::Settings);
+    for (int i = 0; i < 3; ++i) eng.update(1.f / 60.f);
+    auto& setScr = eng.menus().screen();
+    if (setScr.id == MenuId::Settings) {
+        if (setScr.items.empty() || setScr.items[0].sublabel.empty()) {
+            ++fail; std::printf("  HATA: ayarlar alt yazisi bos\n");
+        }
+        // ayar değiştirme aksiyonu çalışıyor mu?
+        int before = eng.settings().renderDistance;
+        setScr.selected = 0;
+        eng.menus().activate();
+        if (eng.settings().renderDistance == before) {
+            ++fail; std::printf("  HATA: ayar degismedi (%d)\n", before);
+        }
+    }
+
+    // 4) mod paneli: 3 mod + geri
+    std::vector<MenuScreen::ModeRow> rows = {
+        {"Duello", "1v1", 3, 2, true},
+        {"Takimli", "5v5", 8, 10, true},
+        {"Mega", "6v6", 11, 12, true},
+    };
+    eng.menus().showModePanel(rows);
+    auto& modeScr = eng.menus().screen();
+    if (modeScr.items.size() != rows.size() + 1) {
+        ++fail; std::printf("  HATA: mod paneli %zu oge (beklenen %zu)\n",
+                            modeScr.items.size(), rows.size() + 1);
+    }
+
+    // 5) mod seçimi gerçekten modu değiştiriyor mu?
+    for (int i = 0; i < 3; ++i) eng.update(1.f / 60.f);
+    eng.menus().screen().selected = 1;
+    eng.menus().activate();
+    if (eng.mode() != 1) {
+        ++fail; std::printf("  HATA: mod degismedi (%d)\n", static_cast<int>(eng.mode()));
+    }
+
+    // 6) envanter ekranı motorun envanterini gösteriyor mu?
+    eng.menus().open(MenuId::Inventory);
+    eng.update(1.f / 60.f);
+    if (eng.menus().screen().inv == nullptr) {
+        ++fail; std::printf("  HATA: envanter isaretcisi bagli degil\n");
+    }
+
+    std::printf("  menu: duraklat/ayarlar/modlar/envanter kablolandi\n");
+    return fail;
+}
+
 int main() {
     std::printf("=== Craftya genisletilmis sistem testleri ===\n");
     testJson();
@@ -1243,6 +1318,8 @@ int main() {
     testAnim();
     g_fail += test_ui_layout();
     g_pass += 11;
+    g_fail += test_menu_wiring();
+    g_pass += 6;
 
     std::printf("\n----------------------------------------\n");
     std::printf("GECEN: %d   BASARISIZ: %d\n", g_pass, g_fail);

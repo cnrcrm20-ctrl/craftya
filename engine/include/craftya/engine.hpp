@@ -101,6 +101,8 @@ private:
     void tickMenu(float dt);
     void rebuildGui();
     void handleKeyboardTap(float x, float y);
+    void handleInventoryTap(float x, float y);
+    void wirePauseMenu();
 
     EngineConfig cfg_;
     EngineState state_ = EngineState::Boot;

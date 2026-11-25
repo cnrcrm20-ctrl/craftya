@@ -190,6 +190,10 @@ void Engine::onTouchDown(int pointerId, float x, float y) {
         return;
     }
     if (state_ == EngineState::Playing && menus_.isOpen()) {
+        if (menus_.current() == MenuId::Inventory) {
+            handleInventoryTap(x, y);
+            return;
+        }
         menus_.onTap(x, y, static_cast<float>(width_), static_cast<float>(height_));
         return;
     }
@@ -241,11 +245,13 @@ void Engine::update(float dt) {
             break;
         case EngineState::Paused:
             toast_.update(dt);
+            wirePauseMenu();
             break;
         default:
             break;
     }
     mesh_.update(dt, static_cast<uint32_t>(sessionSeconds_ * 1000.f));
+    rebuildGui();
 }
 
 void Engine::tickMenu(float dt) {
@@ -259,10 +265,77 @@ void Engine::tickMenu(float dt) {
         if (scr.items.size() >= 1) scr.items[0].action = [this] { menus_.open(MenuId::Play); };
         if (scr.items.size() >= 2) scr.items[1].action = [this] { menus_.open(MenuId::Settings); };
     } else if (scr.id == MenuId::Play) {
-        if (scr.items.size() >= 2) {
-            scr.items[0].action = [this] { startNewWorld(cfg_.seed ? cfg_.seed : 424242); };
-            scr.items[1].action = [this] { refreshLobbyFromServer("{}"); };
+        if (scr.items.size() >= 3) {
+            scr.items[0].action = [this] {
+                startNewWorld(cfg_.seed ? cfg_.seed : 424242);
+            };
+            scr.items[1].action = [this] {
+                // lobi: gerçek mod listesi
+                std::vector<MenuScreen::ModeRow> rows = {
+                    {"Duello", "1v1 arena", lobby.duello, 2, true},
+                    {"Takimli", "5v5 savas", lobby.takimli, 10, true},
+                    {"Mega", "6v6 karmasa", lobby.mega, 12, true},
+                };
+                menus_.showModePanel(rows);
+            };
+            scr.items[2].action = [this] { menus_.close(); };
         }
+    } else if (scr.id == MenuId::Settings) {
+        // ayarları gerçekten değiştir (dokununca değer döner)
+        if (scr.items.size() >= 4) {
+            scr.items[0].sublabel = "mesafe " + std::to_string(cfg_.settings.renderDistance) +
+                                    " chunk / golge " + (cfg_.settings.shadowsEnabled ? "acik" : "kapali");
+            scr.items[1].sublabel = "muzik " + std::to_string(static_cast<int>(cfg_.settings.musicVolume * 100)) +
+                                    "% / efekt " + std::to_string(static_cast<int>(cfg_.settings.sfxVolume * 100)) + "%";
+            scr.items[2].sublabel = "hassasiyet " + std::to_string(static_cast<int>(cfg_.settings.touchSensitivity * 100)) +
+                                    "% / ters Y " + (cfg_.settings.invertY ? "acik" : "kapali");
+            scr.items[0].action = [this] {
+                cfg_.settings.renderDistance = cfg_.settings.renderDistance >= 10 ? 4
+                                             : cfg_.settings.renderDistance + 2;
+                cfg_.settings.shadowsEnabled = !cfg_.settings.shadowsEnabled;
+                applySettings();
+                toast_.show("mesafe: " + std::to_string(cfg_.settings.renderDistance) + " chunk", 1.6f);
+            };
+            scr.items[1].action = [this] {
+                cfg_.settings.musicVolume = cfg_.settings.musicVolume > 0.3f ? 0.f : 0.6f;
+                audio_.setMusicVolume(cfg_.settings.musicVolume);
+                toast_.show(cfg_.settings.musicVolume > 0.f ? "muzik acik" : "muzik kapali", 1.6f);
+            };
+            scr.items[2].action = [this] {
+                cfg_.settings.touchSensitivity = cfg_.settings.touchSensitivity >= 2.0f ? 0.5f
+                                              : cfg_.settings.touchSensitivity * 1.5f;
+                toast_.show("hassasiyet guncellendi", 1.6f);
+            };
+            scr.items[3].action = [this] { menus_.back(); };
+        }
+    } else if (scr.id == MenuId::ModeSelect) {
+        for (size_t i = 0; i + 1 < scr.items.size(); ++i) {
+            uint8_t m = static_cast<uint8_t>(i);
+            scr.items[i].action = [this, m] {
+                setMode(m);
+                startNewWorld(cfg_.seed ? cfg_.seed : 424242);
+                toast_.show(mode_ == 0 ? "Duello basladi" : (mode_ == 1 ? "Takimli basladi" : "Mega basladi"), 2.f);
+            };
+        }
+        scr.items.back().action = [this] { menus_.back(); };
+    }
+}
+
+void Engine::wirePauseMenu() {
+    auto& scr = menus_.screen();
+    if (scr.id != MenuId::Pause) return;
+    if (scr.items.size() >= 3) {
+        scr.items[0].action = [this] {
+            menus_.close();
+            state_ = EngineState::Playing;
+        };
+        scr.items[1].action = [this] { menus_.open(MenuId::Settings); };
+        scr.items[2].action = [this] {
+            if (cfg_.autoSave) saveWorld();
+            game_.reset();
+            state_ = EngineState::MainMenu;
+            menus_.open(MenuId::Main);
+        };
     }
 }
 
@@ -294,6 +367,7 @@ void Engine::tickPlaying(float dt) {
         hud_.touch.inventoryTapped = false;
         if (menus_.current() == MenuId::Inventory) menus_.close();
         else { menus_.open(MenuId::Inventory); menus_.screen().inv = &inv_; }
+        rebuildGui();
     }
     if (hud_.touch.settingsTapped) {
         hud_.touch.settingsTapped = false;
@@ -338,6 +412,50 @@ void Engine::tickPlaying(float dt) {
     if (cfg_.autoSave && autoSaveTimer_ >= cfg_.autoSaveSeconds) {
         autoSaveTimer_ = 0.f;
         saveWorld();
+    }
+}
+
+// envanter ızgarası: dokunulan yuvayı seçer, hotbar'a taşır
+void Engine::handleInventoryTap(float x, float y) {
+    const float w = static_cast<float>(width_);
+    const float h = static_cast<float>(height_);
+    const float pw = std::min(w * 0.94f, 760.f);
+    const float px = (w - pw) * 0.5f;
+    const float availW = pw - 56.f;
+    const float slot = std::min((availW - 8.f * 8.f) / 9.f, h * 0.15f);
+    const float gw = 9 * (slot + 8.f) - 8.f;
+    const float gx = px + (pw - gw) * 0.5f;
+
+    // panel dikey konumu (menü çizimiyle aynı hesap)
+    const float ph = std::min(130.f + 4.f * (slot + 8.f) + 36.f, h * 0.92f);
+    const float py = (h - ph) * 0.5f;
+    const float gy = py + 108.f;
+
+    int idx = -1;
+    for (int i = 0; i < Inventory::TOTAL && idx < 0; ++i) {
+        int c = i % 9;
+        int row = (i < Inventory::HOTBAR) ? 3 : ((i - Inventory::HOTBAR) / 9);
+        float sx = gx + c * (slot + 8.f);
+        float sy = gy + row * (slot + 8.f);
+        if (x >= sx && x < sx + slot && y >= sy && y < sy + slot) idx = i;
+    }
+    if (idx < 0) {
+        // panel dışına dokunma → envanteri kapat
+        if (x < px || x > px + pw || y < py || y > py + ph) menus_.close();
+        return;
+    }
+    menus_.screen().cursorSlot = idx;
+    if (idx < Inventory::HOTBAR) {
+        inv_.select(idx);
+        toast_.show("yuva " + std::to_string(idx + 1) + " secildi", 1.2f);
+    } else {
+        // ana envanterden hotbar'a taşı
+        ItemStack st = inv_.take(idx, 999);
+        if (!st.empty()) {
+            int left = inv_.add(st.itemId, st.count, st.durability);
+            if (left > 0) { inv_.at(idx) = st; toast_.show("hotbar dolu", 1.4f); }
+            else toast_.show("hotbar'a tasindi", 1.4f);
+        }
     }
 }
 
@@ -399,6 +517,8 @@ void Engine::handleKeyboardTap(float x, float y) {
 
 void Engine::rebuildGui() {
     if (state_ != EngineState::Playing) return;
+    // envanter menüsü açıksa motorun envanterini göster
+    if (menus_.current() == MenuId::Inventory) menus_.screen().inv = &inv_;
 }
 
 void Engine::render(DrawList* guiOut) {
