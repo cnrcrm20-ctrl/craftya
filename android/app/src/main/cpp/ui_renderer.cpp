@@ -242,8 +242,13 @@ void UiRenderer::render(GLESBackend& gl, const DrawList& list, int screenW, int 
         fontUploaded_ = true;
     }
     gl.beginUi(screenW, screenH);
+    gl.beginUiText();
 
     for (const DrawItem& it : list.items()) {
+        // TOPLU YAZI: ardışık metin komutları tek çizim çağrısında gider.
+        // Araya başka bir çizim girerse tampon boşaltılır; böylece çizim
+        // SIRASI korunur (yazı sonradan çizilen panellerin altında kalmaz).
+        if (it.cmd != DrawCmd::Text) gl.flushUiText();
         switch (it.cmd) {
             case DrawCmd::Rect: {
                 if (it.corner > 0.5f || it.hasColor2) {
@@ -329,9 +334,10 @@ void UiRenderer::render(GLESBackend& gl, const DrawList& list, int screenW, int 
                             float u0, v0, u1, v1;
                             // KIRPILMIŞ UV: yalnızca glifin gerçek genişliği
                             BitmapFont::glyphUVClip(g, aw, u0, v0, u1, v1);
-                            gl.drawUiGlyph(cursor, it.rect.y, aw * pxUnit, glyphH,
-                                           u0, v0, u1, v1,
-                                           it.color.r, it.color.g, it.color.b, it.color.a);
+                            // TOPLU: çizim çağrısı değil, köşe tamponuna ekle
+                            gl.addUiGlyph(cursor, it.rect.y, aw * pxUnit, glyphH,
+                                          u0, v0, u1, v1,
+                                          it.color.r, it.color.g, it.color.b, it.color.a);
                         }
                         cursor += advanceOf(g);
                     }
@@ -364,6 +370,7 @@ void UiRenderer::render(GLESBackend& gl, const DrawList& list, int screenW, int 
             }
         }
     }
+    gl.flushUiText();   // tüm yazı tek çizim çağrısında
     gl.endUi();
 }
 

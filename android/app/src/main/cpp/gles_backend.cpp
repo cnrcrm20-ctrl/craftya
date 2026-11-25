@@ -142,6 +142,7 @@ void GLESBackend::shutdown() {
     if (fontTex_) { glDeleteTextures(1, &fontTex_); fontTex_ = 0; }
     if (quadVbo_) { glDeleteBuffers(1, &quadVbo_); quadVbo_ = 0; }
     if (uiQuadVbo_) { glDeleteBuffers(1, &uiQuadVbo_); uiQuadVbo_ = 0; }
+    if (uiTextVbo_) { glDeleteBuffers(1, &uiTextVbo_); uiTextVbo_ = 0; }
     destroySurface();
 }
 
@@ -170,6 +171,66 @@ void GLESBackend::createUiPipeline() {
     glGenBuffers(1, &uiQuadVbo_);
     glBindBuffer(GL_ARRAY_BUFFER, uiQuadVbo_);
     glBufferData(GL_ARRAY_BUFFER, uiQuadCapacity_ * sizeof(float) * 256, nullptr, GL_DYNAMIC_DRAW);
+    // toplu yazı tamponu: köşe başına x,y,u,v,r,g,b,a = 8 float
+    glGenBuffers(1, &uiTextVbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, uiTextVbo_);
+    glBufferData(GL_ARRAY_BUFFER, 6 * 8 * sizeof(float) * 2048, nullptr, GL_DYNAMIC_DRAW);
+}
+
+// ---------------- TOPLU YAZI ----------------
+void GLESBackend::beginUiText() {
+    textVerts_.clear();
+}
+
+void GLESBackend::addUiGlyph(float x, float y, float w, float h,
+                             float u0, float v0, float u1, float v1,
+                             float r, float g, float b, float a) {
+    // 2 üçgen = 6 köşe; renk köşe başına (her glif farklı renkte olabilir)
+    const float px[4] = {x, x + w, x, x + w};
+    const float py[4] = {y, y, y + h, y + h};
+    const float pu[4] = {u0, u1, u0, u1};
+    const float pv[4] = {v0, v0, v1, v1};
+    static const int order[6] = {0, 1, 2, 1, 3, 2};
+    for (int k = 0; k < 6; ++k) {
+        int i = order[k];
+        textVerts_.push_back(px[i]);
+        textVerts_.push_back(py[i]);
+        textVerts_.push_back(pu[i]);
+        textVerts_.push_back(pv[i]);
+        textVerts_.push_back(r);
+        textVerts_.push_back(g);
+        textVerts_.push_back(b);
+        textVerts_.push_back(a);
+    }
+}
+
+void GLESBackend::flushUiText() {
+    if (textVerts_.empty() || uiProgram_ == 0 || fontTex_ == 0) { textVerts_.clear(); return; }
+    glUniform1i(glGetUniformLocation(uiProgram_, "uVertColor"), 1);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uUseGrad"), 0);
+    glUniform1f(glGetUniformLocation(uiProgram_, "uCorner"), 0.f);
+    glUniform1f(glGetUniformLocation(uiProgram_, "uRingInner"), 0.f);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uUseTex"), 1);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uTex"), 0);
+    glBindTexture(GL_TEXTURE_2D, fontTex_);
+    glBindBuffer(GL_ARRAY_BUFFER, uiTextVbo_);
+    glBufferData(GL_ARRAY_BUFFER, textVerts_.size() * sizeof(float),
+                 textVerts_.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+                          reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+                          reinterpret_cast<void*>(2 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+                          reinterpret_cast<void*>(4 * sizeof(float)));
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(textVerts_.size() / 8));
+    stats_.drawCalls++;
+    textVerts_.clear();
+    // diğer çizimler 4 float'lık düzen kullanıyor: 2. özniteliği kapat
+    glDisableVertexAttribArray(2);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uVertColor"), 0);
 }
 
 void GLESBackend::resize(int w, int h) {
@@ -302,6 +363,10 @@ void GLESBackend::beginUi(int w, int h) {
                 static_cast<float>(w), static_cast<float>(h));
     glUniform1i(glGetUniformLocation(uiProgram_, "uTex"), 0);
     glUniform1i(glGetUniformLocation(uiProgram_, "uUseTex"), 0);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uVertColor"), 0);
+    // 2. öznitelik yalnız toplu yazıda kullanılıyor; kapalıyken varsayılan
+    // değer (0,0,0,1) okunur ve renk uniform'dan gelir.
+    glDisableVertexAttribArray(2);
     glActiveTexture(GL_TEXTURE0);
     glBindBuffer(GL_ARRAY_BUFFER, uiQuadVbo_);
 }

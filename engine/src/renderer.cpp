@@ -98,13 +98,16 @@ const char* ShaderSources::guiVS() {
 precision highp float;
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aUV;
+layout(location = 2) in vec4 aColor;    // toplu yazıda köşe rengi
 uniform vec2 uScreenSize;
 uniform vec2 uRectCenter;   // kutunun ekran merkezi (px)
 out vec2 vUV;
 out vec2 vLocal;            // kutunun merkezine göre konum (px)
+out vec4 vColor;
 void main() {
     vec2 ndc = (aPos / uScreenSize) * 2.0 - 1.0;
     vUV = aUV;
+    vColor = aColor;
     vLocal = aPos - uRectCenter;
     gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
 }
@@ -116,6 +119,8 @@ const char* ShaderSources::guiFS() {
 precision mediump float;
 in vec2 vUV;
 in vec2 vLocal;
+in vec4 vColor;             // toplu yazıda köşe rengi
+uniform bool uVertColor;    // true: renk köşeden gelir (tek çizimde çok renk)
 uniform sampler2D uTex;
 uniform vec4 uColor;
 uniform vec4 uColor2;      // gradyan alt rengi
@@ -136,7 +141,7 @@ float sdRoundBox(vec2 p, vec2 b, float r) {
 }
 
 void main() {
-    vec4 c = uUseGrad ? mix(uColor, uColor2, vUV.y) : uColor;
+    vec4 c = uVertColor ? vColor : (uUseGrad ? mix(uColor, uColor2, vUV.y) : uColor);
 
     // ---- yuvarlatılmış köşe (kenar yumuşatmalı) ----
     if (uCorner > 0.5) {

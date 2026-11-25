@@ -53,6 +53,14 @@ public:
     void drawUiGlyph(float x, float y, float w, float h,
                      float u0, float v0, float u1, float v1,
                      float r, float g, float b, float a);
+    // --- TOPLU YAZI: glif başına çizim yerine tek VBO + tek çizim çağrısı.
+    // Bir menüde ~200 glif var; mobilde her biri ayrı draw call = GPU boşta
+    // beklemesi. Kare başına 1 çağrıya iniyor.
+    void beginUiText();
+    void addUiGlyph(float x, float y, float w, float h,
+                    float u0, float v0, float u1, float v1,
+                    float r, float g, float b, float a);
+    void flushUiText();
     bool fontReady() const { return fontTex_ != 0; }
     void endUi();
 
@@ -69,6 +77,8 @@ private:
     unsigned int fontTex_ = 0;
     unsigned int quadVbo_ = 0;
     unsigned int uiQuadVbo_ = 0;
+    unsigned int uiTextVbo_ = 0;
+    std::vector<float> textVerts_;   // 6 float/köşe: x,y,u,v,r,g,b,a
     int uiQuadCapacity_ = 0;
     int width_ = 0, height_ = 0;
     float viewProj_[16] = {0};
