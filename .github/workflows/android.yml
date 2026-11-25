@@ -152,14 +152,24 @@ jobs:
           path: /tmp/apkout/*.apk
           if-no-files-found: error
 
+      - name: Surum numarasini oku
+        id: ver
+        run: |
+          VN=$(grep -oP 'versionName\s+"\K[^"]+' android/app/build.gradle | head -1)
+          echo "version=$VN" >> $GITHUB_OUTPUT
+          echo "APK surumu: v$VN"
+
       - name: Release olustur
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
         continue-on-error: true
         run: |
-          gh release create "v0.2.${{ github.run_number }}" \
+          # onceki derlemelerin etiketleriyle cakismasin diye surum adindan
+          # bagimsiz benzersiz bir etiket kullanilir: v<surum>-b<run>
+          TAG="v${VERSION}-b${{ github.run_number }}"
+          gh release create "$TAG" \
             /tmp/apkout/*.apk \
-            --title "Craftya 0.2.${{ github.run_number }}" \
-            --notes "Otomatik derleme · ${{ github.sha }}" || \
-          gh release upload "v0.2.${{ github.run_number }}" \
-            /tmp/apkout/*.apk --clobber
+            --title "Craftya $VERSION (derleme ${{ github.run_number }})" \
+            --notes "Craftya $VERSION · mobil odakli · ${{ github.sha }}" || \
+          gh release upload "$TAG" /tmp/apkout/*.apk --clobber

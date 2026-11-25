@@ -418,7 +418,7 @@ void Engine::tickPlaying(float dt) {
                                                     3.2f, damage, died, diedType);
         if (hitMob) {
             audio_.play(audio_.sfx(SfxId::Hit), 0.9f);
-            vibration_ = 0.045f;
+            if (cfg_.settings.vibration) vibration_ = 0.045f;
             if (died) {
                 audio_.play(audio_.sfx(SfxId::Eat), 0.7f);
                 toast_.show("avlandi", 1.2f);
@@ -426,12 +426,12 @@ void Engine::tickPlaying(float dt) {
             }
         } else if (in.breakBlock) {
             audio_.play(audio_.sfx(SfxId::Break), 0.85f);
-            vibration_ = 0.05f;   // 50 ms titreşim
+            if (cfg_.settings.vibration) vibration_ = 0.05f;
         }
     }
     if (in.placeBlock) {
         audio_.play(audio_.sfx(SfxId::Place), 0.8f);
-        vibration_ = 0.03f;
+        if (cfg_.settings.vibration) vibration_ = 0.03f;
     }
     if (in.jump && game_->player().onGround) {
         audio_.play(audio_.sfx(SfxId::Jump), 0.6f);

@@ -314,6 +314,17 @@ void androidMain(android_app* app) {
     st.cfg.seed = 20261124u;
     st.cfg.savePath = "craftya_world.dat";
     st.cfg.settingsPath = "craftya_settings.json";
+    // ---- MOBİL VARSAYILANLAR ----
+    // Not 11 Pro 4G sınıfı cihazda 60 FPS hedefi: 6 chunk mesafe,
+    // %80 çözünürlük ölçeği, gölge kapalı (mobilde gölge yerine
+    // yönlü kenar ışığı kullanılıyor).
+    st.cfg.settings.renderDistance = 6;
+    st.cfg.settings.resolutionScale = 0.8f;
+    st.cfg.settings.shadowsEnabled = false;
+    st.cfg.settings.fpsMode = 60;
+    st.cfg.settings.fov = 72.f;
+    st.cfg.settings.touchSensitivity = 1.0f;
+    st.cfg.settings.vibration = true;
 
     while (st.running) {
         int events = 0;
