@@ -25,6 +25,10 @@ on:
         description: 'Bu run kaç dakika çalışsın (boş = 340). Test için 8 yaz.'
         required: false
         default: ''
+  push:
+    # Sadece bu dosya değiştiğinde. GitHub, içinde push tetikleyicisi olmayan
+    # yeni workflow'u bazen hiç kaydetmiyor (workflow_dispatch 404 veriyor).
+    paths: ['.github/workflows/hub.yml']
   schedule:
     # Emniyet ağı: zincir bir şekilde koparsa 6 saatte bir yeniden başlat
     - cron: '0 */6 * * *'
