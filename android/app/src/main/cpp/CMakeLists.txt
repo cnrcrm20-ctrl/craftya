@@ -9,11 +9,33 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 
 set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../engine)
+set(GLUE_DIR ${ANDROID_NDK}/sources/android/native_app_glue)
+
+# ---------------------------------------------------------------------------
+# NativeActivity yardımcı katmanı (pencere/girdi döngüsü).
+#
+# KÖK NEDEN NOTU: Bu dosya Android'in uygulamayı başlatmak için aradığı
+# ANativeActivity_onCreate sembolünü tanımlar. Daha önce ayrı bir STATIC
+# kütüphane olarak derleniyordu; yukarıdaki -fvisibility=hidden preset'i
+# yüzünden sembol gizleniyor ve uygulama AÇILIRKEN ÇÖKÜYORDU.
+#
+# Bu yüzden glue dosyası doğrudan hedefe kaynak olarak ekleniyor ve SADECE
+# onun için -fvisibility=default veriliyor. Böylece:
+#   * header yolu (android_native_app_glue.h) doğru şekilde bulunur,
+#   * sembol .so'nun dinamik tablosuna çıkar,
+#   * statik kütüphane / --whole-archive karmaşası gerekmez.
+#
+# DİKKAT: NDK kökünü include yoluna eklemeyin; android/input.h'i gölgeler.
+# ---------------------------------------------------------------------------
+set(GLUE_SRC ${GLUE_DIR}/android_native_app_glue.c)
+set_source_files_properties(${GLUE_SRC} PROPERTIES
+        COMPILE_OPTIONS "-fvisibility=default")
 
 add_library(craftya SHARED
         android_main.cpp
         gles_backend.cpp
         ui_renderer.cpp
+        ${GLUE_SRC}
         ${ENGINE_DIR}/src/json.cpp
         ${ENGINE_DIR}/src/lighting.cpp
         ${ENGINE_DIR}/src/atlas.cpp
@@ -34,32 +56,9 @@ add_library(craftya SHARED
         ${ENGINE_DIR}/src/ecs.cpp
 )
 
-target_include_directories(craftya PRIVATE ${ENGINE_DIR}/include)
-
-# ---------------------------------------------------------------------------
-# NativeActivity yardımcı katmanı (pencere/girdi döngüsü) — NDK ile gelir.
-#
-# DİKKAT: Yalnızca .c dosyası eklenmeli; NDK kökünü include yoluna eklemek
-# android/input.h'i gölgeleyip "unknown type AInputEvent" hatası verir.
-#
-# DİKKAT: -fvisibility=hidden (yukarıdaki preset) EL İLE KALDIRILMALI.
-# Bu glue dosyası Android'in uygulamayı başlatmak için aradığı
-# ANativeActivity_onCreate sembolünü tanımlar. Sembol gizlenirse
-# libcraftya.so yüklenirken "ANativeActivity_onCreate bulunamadı" hatası
-# oluşur ve uygulama AÇILIRKEN ÇÖKER (ekran hiç gelmez).
-# ---------------------------------------------------------------------------
-add_library(native_app_glue STATIC
-        ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
-target_include_directories(native_app_glue PUBLIC
-        ${ANDROID_NDK}/sources/android/native_app_glue)
-set_target_properties(native_app_glue PROPERTIES
-        C_VISIBILITY_PRESET default
-        VISIBILITY_INLINES_HIDDEN OFF)
-
-# Glue'nun tüm nesneleri .so'ya dahil edilsin; aksi halde statik kütüphane
-# içindeki ANativeActivity_onCreate bağlanmaz ve sembol hiç var olmaz.
-target_link_options(craftya PRIVATE
-        "-Wl,--whole-archive" "$<TARGET_FILE:native_app_glue>" "-Wl,--no-whole-archive")
+target_include_directories(craftya PRIVATE
+        ${ENGINE_DIR}/include
+        ${GLUE_DIR})
 
 target_link_libraries(craftya
         android
@@ -70,8 +69,9 @@ target_link_libraries(craftya
 )
 
 # ---------------------------------------------------------------------------
-# CI DOĞRULAMASI: APK'nın gerçekten açılabilir olduğunu derleme anında kanıtla.
-# Sembol yoksa build BURADA durur — bir daha "çalışmayan APK" yayınlanmaz.
+# CI/yerel DOĞRULAMA: APK'nın gerçekten açılabilir olduğunu derleme anında
+# kanıtla. Sembol yoksa build BURADA durur — bir daha "çalışmayan APK"
+# yayınlanmaz.
 # ---------------------------------------------------------------------------
 add_custom_command(TARGET craftya POST_BUILD
         COMMAND ${CMAKE_COMMAND}
