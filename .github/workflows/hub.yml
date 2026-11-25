@@ -119,6 +119,17 @@ jobs:
       # ---------------------------------------------------------------- sunucu
       - name: Sunucuları başlat
         run: |
+          # Boş değerler 'required variable ... is missing a value' hatası verir.
+          # rooms.env'deki BOŞ satırları at, sadece KEY=VALUE olanları tut.
+          if [ -f runtime/rooms.env ]; then
+            grep -E '^[A-Z0-9_]+=.+' runtime/rooms.env >> .env || true
+          fi
+          echo "--- .env (değerler gizli) ---"
+          sed -E 's/=.*/=<dolu>/' .env
+          echo "--- _MEM satırları ---"
+          grep -c '_MEM=' .env || echo "0"
+          docker compose -f docker-compose.hub.yml config >/dev/null || {
+            echo "HATA: compose config geçersiz"; exit 1; }
           docker compose -f docker-compose.hub.yml up -d
           echo "containers:"; docker compose -f docker-compose.hub.yml ps
 
