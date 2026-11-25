@@ -11,8 +11,17 @@ namespace {
 constexpr float PI = 3.14159265358979f;
 const Color kWhite = Color{1, 1, 1, 1};
 const Color kBlack = Color{0, 0, 0, 1};
-const Color kPanel = Color{0.10f, 0.11f, 0.14f, 0.94f};
-const Color kAccent = Color{0.24f, 0.78f, 0.44f, 1.f};
+// ---- modern palet (2026 mobil oyun estetiği) ----
+// Koyu cam panel + canlı yeşil vurgu + yumuşak beyaz metin.
+const Color kPanel      = Color{0.07f, 0.09f, 0.13f, 0.90f};   // cam panel
+const Color kPanelTop   = Color{0.13f, 0.16f, 0.22f, 0.96f};   // gradyan üstü
+const Color kPanelBot   = Color{0.07f, 0.09f, 0.13f, 0.96f};   // gradyan altı
+const Color kCard       = Color{0.16f, 0.19f, 0.26f, 0.92f};   // kart yüzeyi
+const Color kCardHi     = Color{0.23f, 0.28f, 0.37f, 0.96f};   // kart (seçili)
+const Color kAccent     = Color{0.24f, 0.82f, 0.47f, 1.f};     // ana vurgu
+const Color kAccentDim  = Color{0.13f, 0.48f, 0.29f, 1.f};
+const Color kTextDim    = Color{0.62f, 0.68f, 0.76f, 1.f};
+const Color kStroke     = Color{1.f, 1.f, 1.f, 0.10f};         // ince kenar
 const Color kDanger = Color{0.86f, 0.26f, 0.26f, 1.f};
 
 std::string fmtInt(long v) { return std::to_string(v); }
@@ -70,6 +79,46 @@ void DrawList::circle(float cx, float cy, float radius, const Color& fill, float
     items_.push_back(d);
 }
 
+void DrawList::roundRect(const Rect& r, const Color& c, float corner) {
+    DrawItem d;
+    d.cmd = DrawCmd::Rect;
+    d.rect = r;
+    d.color = c;
+    d.corner = corner;
+    items_.push_back(d);
+}
+
+void DrawList::gradient(const Rect& r, const Color& top, const Color& bottom, float corner) {
+    DrawItem d;
+    d.cmd = DrawCmd::Rect;
+    d.rect = r;
+    d.color = top;
+    d.color2 = bottom;
+    d.hasColor2 = true;
+    d.corner = corner;
+    items_.push_back(d);
+}
+
+void DrawList::shadow(const Rect& r, float blur, const Color& c, float corner) {
+    // Katmanlı halkalar: yarı saydam kutular büyüyerek alttan taşar.
+    // Gerçek bulanıklık (gaussian) yerine 4 katman — mobilde ucuz ve
+    // gözle ayırt edilemeyecek kadar yumuşak.
+    const int layers = 4;
+    for (int i = layers; i >= 1; --i) {
+        float t = static_cast<float>(i) / layers;      // 1.0 → 0.25
+        float grow = blur * t;
+        Color cc = c;
+        cc.a *= (0.30f / layers) * (1.2f - t * 0.5f);
+        DrawItem d;
+        d.cmd = DrawCmd::Rect;
+        d.rect = Rect{r.x - grow, r.y - grow + blur * 0.28f,
+                      r.w + grow * 2.f, r.h + grow * 2.f};
+        d.color = cc;
+        d.corner = corner > 0.f ? corner + grow : 0.f;
+        items_.push_back(d);
+    }
+}
+
 void DrawList::circleButton(float cx, float cy, float radius, const Color& fill,
                             const Color& border, const std::string& label) {
     circle(cx, cy, radius, fill, 0.f);
@@ -92,10 +141,15 @@ void Hud::resize(float widthPx, float heightPx, float dpiScale) {
     // Ekran kısa kenarı = yerleşim birimi (telefon yatayda 854x480 gibi küçük)
     const float m = std::min(w_, h_);
 
-    // --- hotbar: alt orta, ekranın %62 genişliği ---
-    float slot = m * 0.088f;
+    // --- hotbar: alt orta ---
+    // KOYU KENAR KORUMASI: telefonda (900x420) eski 0.088*kenar ölçekli yuva
+    // + büyük iç boşluk hotbar'ı ekranın altına taşırıyordu. Yuva boyu
+    // kısa kenara göre ölçeklenip ekran genişliğine göre sınırlanıyor.
+    float slot = std::min(m * 0.088f, w_ * 0.072f);
     float barW = slot * 9 + m * 0.010f * 8;
-    hotbarRect_ = Rect{(w_ - barW) * 0.5f, h_ - slot - m * 0.020f, barW, slot};
+    hotbarRect_ = Rect{(w_ - barW) * 0.5f,
+                       std::min(h_ - slot - m * 0.020f, h_ - slot - m * 0.012f),
+                       barW, slot};
 
     // --- joystick: SOL ALT, hotbar'ın üstünde ---
     joyRadius_ = m * 0.115f;
@@ -281,64 +335,99 @@ void Hud::build(DrawList& out, const Inventory& inv, float health, float hunger,
 
     // ---- hedef can barı: nişangâhın hemen üstünde ----
     if (touch.hasTarget) {
-        float bw = 96.f * s2, bh = 7.f * s2;
-        float bx = cx - bw * 0.5f, by = cy - 26.f * s2;
-        out.rect(Rect{bx - 1.f, by - 1.f, bw + 2.f, bh + 2.f}, Color{0, 0, 0, 0.65f});
-        out.rect(Rect{bx, by, bw, bh}, Color{0.25f, 0.09f, 0.09f, 0.9f});
+        float bw = 108.f * s2, bh = 8.f * s2;
+        float bx = cx - bw * 0.5f, by = cy - 28.f * s2;
+        float brad = bh * 0.5f;
+        out.roundRect(Rect{bx - 3.f, by - 3.f, bw + 6.f, bh + 6.f},
+                      Color{0.f, 0.f, 0.f, 0.42f}, brad + 3.f);
+        out.roundRect(Rect{bx, by, bw, bh}, Color{0.16f, 0.07f, 0.10f, 0.92f}, brad);
         float f = std::clamp(touch.targetHealth01, 0.f, 1.f);
         Color hp = f > 0.5f ? Color{0.42f, 0.85f, 0.36f, 1}
                  : f > 0.25f ? Color{0.95f, 0.75f, 0.25f, 1}
                              : Color{0.92f, 0.28f, 0.24f, 1};
-        out.rect(Rect{bx, by, bw * f, bh}, hp);
+        if (f > 0.01f) {
+            Color hpTop{hp.r * 1.25f, hp.g * 1.25f, hp.b * 1.25f, 1.f};
+            out.gradient(Rect{bx, by, bw * f, bh}, hpTop, hp, brad);
+        }
+        out.roundRect(Rect{bx, by, bw, 1.f}, Color{1, 1, 1, 0.14f}, 0.5f);
     }
 
     // ---- can + açlık barı: hotbar'ın HEMEN ÜSTÜNDE ----
-    float heart = m * 0.034f;
-    float gap = heart * 1.16f;
-    float barY = hotbarRect_.y - heart * 1.75f;
-    float barX = hotbarRect_.x + m * 0.002f;
-    for (int i = 0; i < 10; ++i) {
-        float fill = std::clamp((health - i * 2.f) / 2.f, 0.f, 1.f);
-        Rect r{barX + i * gap, barY, heart, heart};
-        out.rect(r, Color{0.07f, 0.02f, 0.03f, 0.85f});
-        out.rect(Rect{r.x, r.y, r.w, 1.f}, Color{1, 1, 1, 0.18f});
-        if (fill > 0.f) {
-            // dolgu alttan yukarı (hasar aldıkça azalır)
-            out.rect(Rect{r.x + 1.5f, r.y + 1.5f + (r.h - 3.f) * (1.f - fill),
-                          r.w - 3.f, (r.h - 3.f) * fill},
-                     Color{0.90f, 0.22f, 0.28f, 1.f});
-        }
+    // Eski 10 ayrı kare kutucuk "BIOS göstergesi" gibi duruyordu.
+    // Artık iki yuvarlatılmış, gradyanlı bar + parlak iç kenar.
+    {
+        const float bh = m * 0.020f;
+        const float bw = std::min(m * 0.30f, hotbarRect_.w * 0.52f);
+        const float by2 = hotbarRect_.y - bh * 2.f - m * 0.052f;
+        const float bx2 = hotbarRect_.x + m * 0.002f;
+        const float rad = bh * 0.5f;
+        auto bar = [&](float x, float y, float w, float v01,
+                       Color a, Color b) {
+            out.roundRect(Rect{x - 2.f, y - 2.f, w + 4.f, bh + 4.f},
+                          Color{0.f, 0.f, 0.f, 0.38f}, rad + 2.f);
+            out.roundRect(Rect{x, y, w, bh}, Color{0.12f, 0.13f, 0.17f, 0.85f}, rad);
+            float f = std::clamp(v01, 0.f, 1.f);
+            if (f > 0.005f) out.gradient(Rect{x, y, w * f, bh}, a, b, rad);
+            // üstteki ışık çizgisi: cam/plastik his
+            out.roundRect(Rect{x + rad * 0.5f, y + 1.f, w - rad, 1.2f},
+                          Color{1.f, 1.f, 1.f, 0.16f}, 0.6f);
+        };
+        bar(bx2, by2, bw, health / 20.f,
+            Color{1.f, 0.42f, 0.40f, 1.f}, Color{0.86f, 0.16f, 0.26f, 1.f});
+        bar(bx2, by2 + bh + m * 0.020f, bw * 0.70f, hunger / 20.f,
+            Color{1.f, 0.82f, 0.42f, 1.f}, Color{0.90f, 0.52f, 0.14f, 1.f});
     }
 
     // ---- hotbar ----
     float slot = hotbarRect_.h;
-    out.rect(Rect{hotbarRect_.x - 3.f, hotbarRect_.y - 3.f,
-                  hotbarRect_.w + 6.f, slot + 6.f}, Color{0,0,0,0.42f});
+    float slotRad = slot * 0.26f;
+    float slotStep = slot + m * 0.010f;
+    float barW = slotStep * 8.f + slot;   // 9 yuva, arada boşluk
+    // cam panel
+    out.roundRect(Rect{hotbarRect_.x - m * 0.008f, hotbarRect_.y - m * 0.008f,
+                       barW + m * 0.016f, slot + m * 0.016f},
+                  Color{0.08f, 0.09f, 0.12f, 0.46f}, slotRad + m * 0.008f);
     for (int i = 0; i < 9; ++i) {
-        float x = hotbarRect_.x + i * (slot + m * 0.010f);
+        float x = hotbarRect_.x + i * slotStep;
         const ItemStack& it = inv.at(i);
         bool sel = (i == inv.selectedIndex());
         float pulse = 0.5f + 0.5f * std::sin(hotbarFlashTimer * 5.f);
-        Color bg = sel ? Color{0.92f, 0.90f, 0.55f, 0.95f}
-                       : Color{0.16f, 0.17f, 0.21f, 0.80f};
-        out.rect(Rect{x, hotbarRect_.y, slot, slot}, bg);
-        if (sel)
-            out.rect(Rect{x, hotbarRect_.y, slot, slot * 0.06f},
-                     Color{1.f, 0.95f, 0.6f, 0.55f + 0.45f * pulse});
+        if (sel) {
+            // seçili slot: yumuşak hâle + gradyan çerçeve
+            out.roundRect(Rect{x - 3.f, hotbarRect_.y - 3.f, slot + 6.f, slot + 6.f},
+                          Color{0.30f, 0.85f, 0.55f, 0.17f}, slotRad + 3.f);
+            out.gradient(Rect{x - 1.5f, hotbarRect_.y - 1.5f, slot + 3.f, slot + 3.f},
+                         Color{0.96f, 0.99f, 1.f, 0.95f},
+                         Color{0.45f, 0.86f, 0.66f, 0.95f}, slotRad + 1.5f);
+            out.roundRect(Rect{x, hotbarRect_.y, slot, slot},
+                          Color{0.20f, 0.30f, 0.28f, 0.92f}, slotRad);
+        } else {
+            out.roundRect(Rect{x, hotbarRect_.y, slot, slot},
+                          Color{0.15f, 0.17f, 0.21f, 0.72f}, slotRad);
+            out.roundRect(Rect{x, hotbarRect_.y, slot, 1.f},
+                          Color{1.f, 1.f, 1.f, 0.10f}, 0.5f);
+        }
         if (!it.empty()) {
-            out.texturedRect(Rect{x + slot * 0.14f, hotbarRect_.y + slot * 0.14f,
-                                  slot * 0.72f, slot * 0.72f},
+            out.texturedRect(Rect{x + slot * 0.16f, hotbarRect_.y + slot * 0.16f,
+                                  slot * 0.68f, slot * 0.68f},
                              static_cast<uint16_t>(it.itemId * 3));
             if (it.count > 1)
                 out.text(fmtInt(it.count), x + slot * 0.92f,
                          hotbarRect_.y + slot * 0.60f, 0.55f * s2 * 2.f, kWhite, 2);
+        }
+        if (sel) {
+            // alt gösterge noktası (nabız)
+            out.roundRect(Rect{x + slot * 0.32f, hotbarRect_.y + slot + 4.f,
+                               slot * 0.36f, 2.5f},
+                          Color{0.45f + 0.4f * pulse, 0.95f, 0.70f, 0.9f}, 1.2f);
         }
     }
 
     // ---- üst sol: FPS / ping / oyuncu ----
     float tx = m * 0.022f;
     float tyStep = m * 0.038f;
-    out.rect(Rect{tx - 6.f, m * 0.020f, m * 0.20f, tyStep * 3.f}, Color{0, 0, 0, 0.22f});
+    out.roundRect(Rect{tx - m * 0.012f, m * 0.016f, m * 0.166f, tyStep * 3.f},
+                  Color{0.07f, 0.08f, 0.11f, 0.34f}, m * 0.016f);
     out.text(fmtInt(static_cast<long>(fps)) + " FPS", tx, m * 0.030f, 0.85f * s2,
              fps >= 55.f ? kAccent : (fps >= 40.f ? Color{0.95f,0.8f,0.2f,1} : kDanger));
     out.text(fmtInt(pingMs) + " ms", tx, m * 0.030f + tyStep, 0.75f * s2,
@@ -352,20 +441,28 @@ void Hud::build(DrawList& out, const Inventory& inv, float health, float hunger,
 
     // ---- üst sağ: envanter / ayarlar / sohbet ----
     for (auto& b : topButtons_) {
-        Color fill = b.pressed ? Color{0.32f, 0.80f, 0.48f, 0.9f} : Color{0.10f, 0.12f, 0.16f, 0.72f};
-        out.circleButton(b.cx, b.cy, b.radius, fill, Color{1, 1, 1, 0.45f}, b.label);
+        // yumuşak hâle → cam daire → ince parlak halka
+        out.circle(b.cx, b.cy, b.radius * 1.22f, Color{0.35f, 0.85f, 0.60f, 0.10f}, 0.f);
+        Color fill = b.pressed ? Color{0.36f, 0.86f, 0.56f, 0.88f}
+                               : Color{0.09f, 0.11f, 0.15f, 0.66f};
+        out.circleButton(b.cx, b.cy, b.radius, fill, Color{1.f, 1.f, 1.f, 0.26f}, b.label);
     }
 
     // ---- joystick (sol alt) ----
-    out.circle(joyCx_, joyCy_, joyRadius_, Color{1, 1, 1, 0.09f}, 0.f);
-    out.circle(joyCx_, joyCy_, joyRadius_, Color{1, 1, 1, 0.30f}, joyRadius_ * 0.06f);
-    out.circle(joyKnobX_, joyKnobY_, joyRadius_ * 0.40f, Color{1, 1, 1, 0.42f}, 0.f);
-    out.circle(joyKnobX_, joyKnobY_, joyRadius_ * 0.40f, Color{1, 1, 1, 0.55f}, joyRadius_ * 0.035f);
+    out.circle(joyCx_, joyCy_, joyRadius_ * 1.04f, Color{0.f, 0.f, 0.f, 0.10f}, 0.f);
+    out.circle(joyCx_, joyCy_, joyRadius_, Color{1.f, 1.f, 1.f, 0.07f}, 0.f);
+    out.circle(joyCx_, joyCy_, joyRadius_, Color{1.f, 1.f, 1.f, 0.22f}, joyRadius_ * 0.045f);
+    out.circle(joyKnobX_, joyKnobY_, joyRadius_ * 0.44f, Color{0.10f, 0.13f, 0.17f, 0.34f}, 0.f);
+    out.circle(joyKnobX_, joyKnobY_, joyRadius_ * 0.42f, Color{1.f, 1.f, 1.f, 0.34f}, 0.f);
+    out.circle(joyKnobX_, joyKnobY_, joyRadius_ * 0.30f, Color{1.f, 1.f, 1.f, 0.20f}, 0.f);
+    out.circle(joyKnobX_, joyKnobY_, joyRadius_ * 0.42f, Color{1.f, 1.f, 1.f, 0.55f}, joyRadius_ * 0.035f);
 
     // ---- aksiyon butonları (sağ alt) ----
     for (auto& b : buttons_) {
-        Color fill = b.pressed ? Color{0.30f, 0.78f, 0.45f, 0.85f} : Color{1, 1, 1, 0.16f};
-        out.circleButton(b.cx, b.cy, b.radius, fill, Color{1, 1, 1, 0.38f}, b.label);
+        out.circle(b.cx, b.cy, b.radius * 1.18f, Color{0.f, 0.f, 0.f, 0.12f}, 0.f);
+        Color fill = b.pressed ? Color{0.34f, 0.84f, 0.55f, 0.82f}
+                               : Color{1.f, 1.f, 1.f, 0.13f};
+        out.circleButton(b.cx, b.cy, b.radius, fill, Color{1.f, 1.f, 1.f, 0.34f}, b.label);
     }
 }
 
@@ -458,15 +555,27 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
     itemRects_.clear();
     modeRects_.clear();
 
-    // karartma
-    out.rect(Rect{0, 0, screenW, screenH}, Color{0.02f, 0.03f, 0.05f, 0.82f});
+    // ================= MODERN MENÜ =================
+    // Eski görünüm: düz siyah dikdörtgen + kalın yeşil şerit (BIOS gibi).
+    // Yeni: bulanık arka plan + gölgeli cam panel + yuvarlatılmış
+    // gradyan kartlar + yumuşak tipografi.
+    const float m = std::min(screenW, screenH);
+    const float rad = m * 0.045f;          // panel köşe yarıçapı
+    const float cardRad = m * 0.030f;      // kart köşe yarıçapı
 
-    float pw = std::min(screenW * 0.94f, 760.f);
-    float rowH = std::min(78.f, screenH * 0.13f);
+    // arka plan: çok katmanlı dikey gradyan (hafif "blur" hissi)
+    out.gradient(Rect{0, 0, screenW, screenH * 0.5f},
+                 Color{0.03f, 0.05f, 0.09f, 0.90f},
+                 Color{0.05f, 0.07f, 0.12f, 0.86f});
+    out.gradient(Rect{0, screenH * 0.5f, screenW, screenH * 0.5f},
+                 Color{0.05f, 0.07f, 0.12f, 0.86f},
+                 Color{0.02f, 0.03f, 0.06f, 0.94f});
+
+    float pw = std::min(screenW * 0.92f, 720.f);
+    float rowH = std::min(76.f, screenH * 0.125f);
     int n = static_cast<int>(current_.items.size());
     float ph;
     if (current_.id == MenuId::Inventory || current_.id == MenuId::Crafting) {
-        // 9 sütun x 4 satır ızgara ekrana sığacak şekilde
         float availW = pw - 56.f;
         float slot = std::min((availW - 8.f * 8.f) / 9.f, screenH * 0.15f);
         ph = 130.f + 4.f * (slot + 8.f) + 36.f;
@@ -477,23 +586,63 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
     float px = (screenW - pw) * 0.5f;
     float py = (screenH - ph) * 0.5f;
 
-    out.rect(Rect{px, py, pw, ph}, kPanel);
-    out.rect(Rect{px, py, pw, 4.f}, kAccent);
-    out.text(current_.title, px + pw * 0.5f, py + 36.f, 1.5f, kWhite, 1);
+    // panel gölgesi + cam yüzey
+    out.shadow(Rect{px, py, pw, ph}, m * 0.030f, Color{0, 0, 0, 0.85f}, rad);
+    out.gradient(Rect{px, py, pw, ph}, kPanelTop, kPanelBot, rad);
+    // üst kenarda ince ışık çizgisi (cam hissi)
+    out.gradient(Rect{px + rad, py, pw - rad * 2.f, 2.f},
+                 Color{1, 1, 1, 0.16f}, Color{1, 1, 1, 0.0f});
+
+    // başlık: büyük, harf aralıklı, ortalanmış
+    out.text(current_.title, px + pw * 0.5f, py + 34.f, 1.7f, kWhite, 1);
+    // başlık altı vurgu çizgisi (kısa, ortada)
+    float ulW = std::min(pw * 0.16f, 120.f);
+    out.gradient(Rect{px + (pw - ulW) * 0.5f, py + 34.f + 46.f, ulW, 3.f},
+                 kAccent, Color{kAccent.r, kAccent.g, kAccent.b, 0.15f}, 1.5f);
 
     for (int i = 0; i < n; ++i) {
         float ry = py + 120.f + i * (rowH + 12.f);
-        Rect r{px + 28.f, ry, pw - 56.f, rowH};
+        Rect r{px + 24.f, ry, pw - 48.f, rowH};
         bool sel = (i == current_.selected);
-        Color bg = sel ? Color{0.22f, 0.42f, 0.30f, 0.95f} : Color{0.16f, 0.17f, 0.21f, 0.9f};
-        if (!current_.items[i].enabled) bg = Color{0.12f, 0.12f, 0.13f, 0.7f};
-        out.rect(r, bg);
-        if (sel) out.rect(Rect{r.x, r.y, 5.f, r.h}, kAccent);
-        out.text(current_.items[i].label, r.x + 22.f, r.y + 18.f, 1.15f,
-                 current_.items[i].enabled ? kWhite : Color{0.5f,0.5f,0.5f,1});
-        if (!current_.items[i].sublabel.empty())
-            out.text(current_.items[i].sublabel, r.x + 22.f, r.y + 50.f, 0.85f,
-                     Color{0.68f, 0.75f, 0.7f, 1});
+
+        Color top = kCard, bot = Color{kCard.r * 0.78f, kCard.g * 0.78f, kCard.b * 0.82f, kCard.a};
+        if (sel) {
+            top = kCardHi;
+            bot = Color{kCard.r * 0.95f, kCard.g * 0.95f, kCard.b * 0.95f, kCard.a};
+        }
+        if (!current_.items[i].enabled) {
+            top = Color{0.12f, 0.13f, 0.16f, 0.55f};
+            bot = Color{0.10f, 0.11f, 0.14f, 0.55f};
+        }
+
+        // kart gölgesi + yuvarlatılmış gradyan yüzey
+        out.shadow(r, m * 0.012f, Color{0, 0, 0, 0.55f}, cardRad);
+        out.gradient(r, top, bot, cardRad);
+        // seçili kartta sol tarafta canlı vurgu hapı
+        if (sel) {
+            float hh = r.h * 0.44f;
+            out.gradient(Rect{r.x + 6.f, r.y + (r.h - hh) * 0.5f, 5.f, hh},
+                         kAccent, kAccentDim, 2.5f);
+        }
+        // ince iç kenar (cam çerçeve)
+        out.roundRect(Rect{r.x, r.y, r.w, 1.5f}, kStroke, 0.75f);
+
+        // Dikey hizalama: gerçek glif yüksekliği ≈ scale*22 px.
+        // Alt etiket varsa iki satır, yoksa tek satır ortalanır.
+        const bool hasSub = !current_.items[i].sublabel.empty();
+        const float labelScale = 1.15f;
+        const float labelH = labelScale * 22.f;
+        if (hasSub) {
+            out.text(current_.items[i].label, r.x + 26.f,
+                     r.y + r.h * 0.5f - labelH - 1.f, labelScale,
+                     current_.items[i].enabled ? kWhite : Color{0.45f,0.48f,0.54f,1});
+            out.text(current_.items[i].sublabel, r.x + 26.f, r.y + r.h * 0.5f + 6.f,
+                     0.80f, kTextDim);
+        } else {
+            out.text(current_.items[i].label, r.x + 26.f,
+                     r.y + r.h * 0.5f - labelH * 0.5f, labelScale,
+                     current_.items[i].enabled ? kWhite : Color{0.45f,0.48f,0.54f,1});
+        }
         itemRects_.push_back(r);
     }
     // ---- envanter / üretim ızgarası ----
@@ -512,10 +661,19 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
             float y = gy + row * (gs + 8.f);
             const ItemStack& it = inv.at(i);
             bool cursor = (i == current_.cursorSlot);
-            out.rect(Rect{x, y, gs, gs},
-                     cursor ? Color{0.30f, 0.48f, 0.34f, 0.95f}
-                            : Color{0.17f, 0.18f, 0.22f, 0.92f});
-            out.rect(Rect{x, y, gs, 2.f}, Color{1, 1, 1, cursor ? 0.55f : 0.16f});
+            const float slotR = gs * 0.22f;
+            if (cursor) {
+                out.roundRect(Rect{x - 2.5f, y - 2.5f, gs + 5.f, gs + 5.f},
+                              Color{0.32f, 0.86f, 0.58f, 0.22f}, slotR + 2.5f);
+                out.gradient(Rect{x - 1.5f, y - 1.5f, gs + 3.f, gs + 3.f},
+                             Color{0.96f, 0.99f, 1.f, 0.92f},
+                             Color{0.42f, 0.84f, 0.64f, 0.92f}, slotR + 1.5f);
+            }
+            out.roundRect(Rect{x, y, gs, gs},
+                          cursor ? Color{0.24f, 0.34f, 0.31f, 0.92f}
+                                 : Color{0.15f, 0.16f, 0.20f, 0.90f}, slotR);
+            out.roundRect(Rect{x + 1.f, y + 1.f, gs - 2.f, 1.f},
+                          Color{1.f, 1.f, 1.f, cursor ? 0.30f : 0.09f}, 0.5f);
             if (!it.empty()) {
                 out.texturedRect(Rect{x + gs * 0.12f, y + gs * 0.12f,
                                       gs * 0.76f, gs * 0.76f},
@@ -532,13 +690,18 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
         float gy = py + 108.f;
         out.text("uretim izgarasi", gx, py + 82.f, 0.8f, Color{0.7f, 0.75f, 0.8f, 1});
         for (int r = 0; r < 3; ++r)
-            for (int c = 0; c < 3; ++c)
-                out.rect(Rect{gx + c * (cs + 6.f), gy + r * (cs + 6.f), cs, cs},
-                         Color{0.17f, 0.18f, 0.22f, 0.92f});
+            for (int c = 0; c < 3; ++c) {
+                Rect cr{gx + c * (cs + 6.f), gy + r * (cs + 6.f), cs, cs};
+                out.roundRect(Rect{cr.x - 2.f, cr.y - 2.f, cr.w + 4.f, cr.h + 4.f},
+                              Color{0.f, 0.f, 0.f, 0.30f}, cs * 0.24f);
+                out.roundRect(cr, Color{0.15f, 0.16f, 0.20f, 0.92f}, cs * 0.22f);
+                out.roundRect(Rect{cr.x + 1.f, cr.y + 1.f, cr.w - 2.f, 1.f},
+                              Color{1.f, 1.f, 1.f, 0.09f}, 0.5f);
+            }
         float ox = gx + 3 * (cs + 6.f) + 12.f;
         out.text("->", ox, gy + cs * 1.2f, 1.0f, kAccent);
-        out.rect(Rect{ox + 62.f, gy + cs * 0.85f, cs, cs},
-                 Color{0.22f, 0.30f, 0.26f, 0.95f});
+        out.roundRect(Rect{ox + 62.f, gy + cs * 0.85f, cs, cs},
+                      Color{0.24f, 0.34f, 0.29f, 0.95f}, cs * 0.22f);
     }
 
     // dokunmatik IPC bu rect listesini kullanır
@@ -634,22 +797,42 @@ std::string ChatLog::submit() {
 
 void ChatLog::buildKeyboard(DrawList& out, float screenW, float screenH) {
     if (!inputOpen_) return;
-    float kbH = screenH * 0.40f;
-    float kbY = screenH - kbH;
-    out.rect(Rect{0, kbY, screenW, kbH}, Color{0.06f, 0.07f, 0.10f, 0.96f});
-    out.rect(Rect{0, kbY, screenW, 3.f}, Color{0.24f, 0.78f, 0.44f, 1.f});
+    const float kbH = screenH * 0.42f;
+    const float kbY = screenH - kbH;
+    const float rad = std::min(screenW, screenH) * 0.035f;
+
+    // cam panel (üstü yuvarlak) + yumuşak geçiş
+    out.gradient(Rect{0.f, kbY - 26.f, screenW, 26.f},
+                 Color{0.05f, 0.06f, 0.09f, 0.f}, Color{0.05f, 0.06f, 0.09f, 0.88f});
+    out.roundRect(Rect{0.f, kbY, screenW, kbH + rad}, Color{0.05f, 0.06f, 0.09f, 0.94f}, rad);
+    // üst kenar ışığı
+    out.gradient(Rect{rad, kbY, screenW - rad * 2.f, 2.f},
+                 Color{0.32f, 0.86f, 0.58f, 0.9f}, Color{0.32f, 0.86f, 0.58f, 0.15f});
 
     // yazı alanı + GÖNDER düğmesi
-    float fieldW = screenW * 0.70f;
-    out.rect(Rect{screenW * 0.04f, kbY + 10.f, fieldW, 44.f},
-             Color{0.14f, 0.15f, 0.19f, 1.f});
+    const float fieldX = screenW * 0.04f;
+    const float fieldW = screenW * 0.68f;
+    const float fieldH = 46.f;
+    const float fieldY = kbY + 14.f;
+    out.roundRect(Rect{fieldX - 2.f, fieldY - 2.f, fieldW + 4.f, fieldH + 4.f},
+                  Color{0.f, 0.f, 0.f, 0.35f}, (fieldH + 4.f) * 0.5f);
+    out.roundRect(Rect{fieldX, fieldY, fieldW, fieldH},
+                  Color{0.13f, 0.15f, 0.19f, 0.98f}, fieldH * 0.5f);
+    out.roundRect(Rect{fieldX + 1.f, fieldY + 1.f, fieldW - 2.f, 1.2f},
+                  Color{1.f, 1.f, 1.f, 0.10f}, 0.6f);
     out.text(input_.empty() ? std::string("mesaj yaz...") : input_,
-             screenW * 0.04f + 12.f, kbY + 26.f, 0.85f,
-             input_.empty() ? Color{0.5f, 0.55f, 0.6f, 1} : Color{1, 1, 1, 1});
-    float sendX = screenW * 0.04f + fieldW + 10.f;
-    float sendW = screenW * 0.92f - fieldW - 10.f;
-    out.rect(Rect{sendX, kbY + 10.f, sendW, 44.f}, Color{0.24f, 0.78f, 0.44f, 1.f});
-    out.text("GONDER", sendX + sendW * 0.5f, kbY + 26.f, 0.75f, Color{0.02f,0.06f,0.03f,1}, 1);
+             fieldX + 20.f, fieldY + fieldH * 0.5f - 9.f, 0.85f,
+             input_.empty() ? Color{0.46f, 0.52f, 0.60f, 1} : Color{1, 1, 1, 1});
+
+    const float sendX = fieldX + fieldW + 12.f;
+    const float sendW = screenW * 0.92f - fieldW - 12.f;
+    out.roundRect(Rect{sendX, fieldY, sendW, fieldH},
+                  Color{0.26f, 0.86f, 0.55f, 1.f}, fieldH * 0.5f);
+    out.gradient(Rect{sendX + 2.f, fieldY + 1.5f, sendW - 4.f, fieldH * 0.5f},
+                 Color{1.f, 1.f, 1.f, 0.22f}, Color{1.f, 1.f, 1.f, 0.02f},
+                 fieldH * 0.25f);
+    out.text("GONDER", sendX + sendW * 0.5f, fieldY + fieldH * 0.5f - 8.f,
+             0.72f, Color{0.02f, 0.07f, 0.04f, 1}, 1);
 
     // tuş takımı: 4 satır
     const char* rows[4] = {
@@ -658,32 +841,47 @@ void ChatLog::buildKeyboard(DrawList& out, float screenW, float screenH) {
         "asdfghjklg",
         "zxcvbnm,.?"
     };
-    // 4 satır + en altta boşluk/sil/gönder satırı
-    float availH = kbH - 76.f;
-    float keyW = screenW * 0.075f;
-    float keyH = (availH - 4.f * 5.f) / 5.f;
-    keyH = std::min(keyH, keyW * 1.15f);
+    const float availH = kbH - 84.f;
+    float keyW = screenW * 0.076f;
+    float keyH = std::min((availH - 4.f * 6.f) / 5.f, keyW * 1.10f);
+    const float keyRad = std::min(keyW, keyH) * 0.24f;
+    const float gap = std::max(3.f, keyW * 0.09f);
+
     for (int r = 0; r < 4; ++r) {
         int n = static_cast<int>(std::strlen(rows[r]));
-        float rowW = n * (keyW + 4.f);
+        float rowW = n * (keyW + gap) - gap;
         float sx = (screenW - rowW) * 0.5f;
         for (int i = 0; i < n; ++i) {
-            float x = sx + i * (keyW + 4.f);
-            float y = kbY + 64.f + r * (keyH + 4.f);
+            float x = sx + i * (keyW + gap);
+            float y = fieldY + fieldH + 14.f + r * (keyH + 6.f);
             bool del = (r == 2 && i == n - 1);     // 'g' tuşu = SİL
-            out.rect(Rect{x, y, keyW, keyH},
-                     del ? Color{0.60f, 0.24f, 0.24f, 1.f} : Color{0.22f, 0.24f, 0.30f, 1.f});
+            if (del) {
+                out.gradient(Rect{x, y, keyW, keyH},
+                             Color{0.86f, 0.36f, 0.34f, 1.f},
+                             Color{0.62f, 0.16f, 0.20f, 1.f}, keyRad);
+            } else {
+                out.roundRect(Rect{x, y + 1.5f, keyW, keyH}, Color{0.f, 0.f, 0.f, 0.42f}, keyRad);
+                out.gradient(Rect{x, y, keyW, keyH},
+                             Color{0.28f, 0.31f, 0.38f, 0.96f},
+                             Color{0.17f, 0.19f, 0.24f, 0.96f}, keyRad);
+                out.roundRect(Rect{x + keyRad * 0.5f, y + 1.f, keyW - keyRad, 1.f},
+                              Color{1.f, 1.f, 1.f, 0.16f}, 0.5f);
+            }
             out.text(del ? std::string("SIL") : std::string(1, rows[r][i]),
-                     x + keyW * 0.5f, y + keyH * 0.34f, del ? 0.55f : 0.80f,
-                     Color{1, 1, 1, 1}, 1);
+                     x + keyW * 0.5f, y + keyH * 0.5f - (del ? 7.f : 8.f),
+                     del ? 0.55f : 0.80f, Color{1, 1, 1, 1}, 1);
         }
     }
-    // en alt satır: boşluk + kapat
-    float sy = kbY + 64.f + 4.f * (keyH + 4.f);
-    float spaceW = screenW * 0.46f;
-    out.rect(Rect{(screenW - spaceW) * 0.5f, sy, spaceW, keyH},
-             Color{0.26f, 0.28f, 0.34f, 1.f});
-    out.text("BOSLUK", screenW * 0.5f, sy + keyH * 0.34f, 0.7f, Color{0.8f,0.85f,0.9f,1}, 1);
+    // en alt satır: boşluk
+    float sy = fieldY + fieldH + 14.f + 4.f * (keyH + 6.f);
+    float spaceW = screenW * 0.50f;
+    out.roundRect(Rect{(screenW - spaceW) * 0.5f, sy + 1.5f, spaceW, keyH},
+                  Color{0.f, 0.f, 0.f, 0.40f}, keyRad);
+    out.gradient(Rect{(screenW - spaceW) * 0.5f, sy, spaceW, keyH},
+                 Color{0.30f, 0.33f, 0.40f, 0.96f},
+                 Color{0.18f, 0.20f, 0.25f, 0.96f}, keyRad);
+    out.text("BOSLUK", screenW * 0.5f, sy + keyH * 0.5f - 8.f, 0.68f,
+             Color{0.82f, 0.87f, 0.93f, 1}, 1);
 }
 
 void ChatLog::build(DrawList& out, float screenW, float screenH, float fadeAfter) {
@@ -694,11 +892,13 @@ void ChatLog::build(DrawList& out, float screenW, float screenH, float fadeAfter
     float y = screenH * 0.30f;
     for (int i = static_cast<int>(lines_.size()) - show; i < static_cast<int>(lines_.size()); ++i) {
         const std::string& l = lines_[i];
-        float w = 24.f + l.size() * 9.f;
-        out.rect(Rect{16.f, y - 4.f, std::min(w, screenW * 0.6f), 26.f},
-                 Color{0, 0, 0, 0.35f * alpha});
-        out.text(l, 24.f, y, 0.85f, Color{1, 1, 1, alpha});
-        y += 28.f;
+        float w = std::min(28.f + l.size() * 9.f, screenW * 0.62f);
+        // cam balon + sol renk şeridi
+        out.roundRect(Rect{14.f, y - 6.f, w, 28.f}, Color{0.05f, 0.07f, 0.10f, 0.46f * alpha}, 14.f);
+        out.roundRect(Rect{14.f, y - 6.f, 3.f, 28.f},
+                      Color{kAccent.r, kAccent.g, kAccent.b, 0.85f * alpha}, 1.5f);
+        out.text(l, 26.f, y, 0.85f, Color{1, 1, 1, alpha});
+        y += 32.f;
     }
 }
 

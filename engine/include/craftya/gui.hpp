@@ -37,6 +37,10 @@ struct DrawItem {
     float x2 = 0, y2 = 0;     // Line için bitiş
     float radius = 0.f;       // Circle için yarıçap
     float thickness = 0.f;    // Circle halka kalınlığı (0 = dolu)
+    // ---- modern görünüm ----
+    float corner = 0.f;       // yuvarlatılmış köşe yarıçapı (Rect)
+    Color color2{};           // gradyan ikinci rengi (a>0 ise dikey gradyan)
+    bool hasColor2 = false;
 };
 
 // çizim listesi toplayıcı
@@ -50,6 +54,12 @@ public:
     void line(float x1, float y1, float x2, float y2, const Color& c, float width = 1.f);
     // dokunmatik yuvarlak buton (dokunma alanı dikdörtgen kalır)
     void circle(float cx, float cy, float radius, const Color& fill, float thickness = 0.f);
+    // yuvarlatılmış köşeli kutu (modern kart/buton)
+    void roundRect(const Rect& r, const Color& c, float corner);
+    // üstten alta gradyanlı yuvarlatılmış kutu (buton/kart yüzeyi)
+    void gradient(const Rect& r, const Color& top, const Color& bottom, float corner = 0.f);
+    // yumuşak gölge: kutunun altına katmanlı yarı saydam halkalar
+    void shadow(const Rect& r, float blur, const Color& c, float corner = 0.f);
     void circleButton(float cx, float cy, float radius, const Color& fill,
                       const Color& border, const std::string& label);
 

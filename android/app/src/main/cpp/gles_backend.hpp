@@ -4,6 +4,7 @@
 #pragma once
 #include "craftya/renderer.hpp"
 #include <string>
+#include <vector>
 
 namespace craftya {
 
@@ -38,8 +39,21 @@ public:
     void drawUiQuad(float x, float y, float w, float h,
                     float r, float g, float b, float a,
                     int atlasTile = -1);
+    // modern: yuvarlatılmış köşe + isteğe bağlı gradyan
+    void drawUiQuadStyled(float x, float y, float w, float h,
+                          float r, float g, float b, float a,
+                          float corner,
+                          const float* gradTop, const float* gradBottom,
+                          int atlasTile = -1);
     void drawUiTextRun(float x, float y, float pxSize, float r, float g, float b,
                        const uint8_t* rows, int glyphW, int glyphH, int count);
+    // --- modern yazı: alfa dokulu glif atlası ---
+    void uploadFontAtlas(const uint8_t* alpha, int w, int h);
+    // tek glif çizimi (doku atlasından, anti-aliased, alpha-blend)
+    void drawUiGlyph(float x, float y, float w, float h,
+                     float u0, float v0, float u1, float v1,
+                     float r, float g, float b, float a);
+    bool fontReady() const { return fontTex_ != 0; }
     void endUi();
 
     bool valid() const { return program_ != 0; }

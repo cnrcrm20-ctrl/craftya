@@ -306,9 +306,11 @@ void GLESBackend::beginUi(int w, int h) {
     glBindBuffer(GL_ARRAY_BUFFER, uiQuadVbo_);
 }
 
-void GLESBackend::drawUiQuad(float x, float y, float w, float h,
-                             float r, float g, float b, float a,
-                             int atlasTile) {
+void GLESBackend::drawUiQuadStyled(float x, float y, float w, float h,
+                                   float r, float g, float b, float a,
+                                   float corner,
+                                   const float* gradTop, const float* gradBottom,
+                                   int atlasTile) {
     if (uiProgram_ == 0) return;
     float u0 = 0.f, v0 = 0.f, u1 = 1.f, v1 = 1.f;
     if (atlasTile >= 0) Atlas::tileUV(atlasTile, u0, v0, u1, v1);
@@ -322,12 +324,79 @@ void GLESBackend::drawUiQuad(float x, float y, float w, float h,
         x,     y + h, u0, v1
     };
     glUniform4f(glGetUniformLocation(uiProgram_, "uColor"), r, g, b, a);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uUseGrad"), gradTop ? 1 : 0);
+    if (gradTop) {
+        glUniform4f(glGetUniformLocation(uiProgram_, "uColor2"),
+                    gradBottom[0], gradBottom[1], gradBottom[2], gradBottom[3]);
+    }
+    glUniform2f(glGetUniformLocation(uiProgram_, "uRectCenter"),
+                x + w * 0.5f, y + h * 0.5f);
+    glUniform2f(glGetUniformLocation(uiProgram_, "uHalfSize"), w * 0.5f, h * 0.5f);
+    glUniform1f(glGetUniformLocation(uiProgram_, "uCorner"), corner);
     if (atlasTile >= 0) {
         glBindTexture(GL_TEXTURE_2D, atlasTex_);
         glUniform1i(glGetUniformLocation(uiProgram_, "uUseTex"), 1);
     } else {
         glUniform1i(glGetUniformLocation(uiProgram_, "uUseTex"), 0);
     }
+    glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                          reinterpret_cast<void*>(2 * sizeof(float)));
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    stats_.drawCalls++;
+}
+
+void GLESBackend::drawUiQuad(float x, float y, float w, float h,
+                             float r, float g, float b, float a,
+                             int atlasTile) {
+    // düz dörtgen: stil verisi olmadan (köşe 0, gradyan yok)
+    drawUiQuadStyled(x, y, w, h, r, g, b, a, 0.f, nullptr, nullptr, atlasTile);
+}
+
+// ---- modern yazı: alfa dokulu glif atlası ----
+void GLESBackend::uploadFontAtlas(const uint8_t* alpha, int w, int h) {
+    if (!alpha || w <= 0 || h <= 0) return;
+    if (fontTex_ == 0) glGenTextures(1, &fontTex_);
+    glBindTexture(GL_TEXTURE_2D, fontTex_);
+    // tek kanal alfa → GL_ALPHA yerine RGBA'ya genişlet (uyumluluk)
+    std::vector<uint8_t> rgba(static_cast<size_t>(w) * h * 4);
+    for (size_t i = 0; i < static_cast<size_t>(w) * h; ++i) {
+        rgba[i * 4 + 0] = 255;
+        rgba[i * 4 + 1] = 255;
+        rgba[i * 4 + 2] = 255;
+        rgba[i * 4 + 3] = alpha[i];
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    // DOĞRUSAL filtre: bu, "blok piksel" görünümünü bitiren şey.
+    // (atlas dokusu NEAREST kalıyor — blok sanatı için doğru.)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void GLESBackend::drawUiGlyph(float x, float y, float w, float h,
+                              float u0, float v0, float u1, float v1,
+                              float r, float g, float b, float a) {
+    if (uiProgram_ == 0 || fontTex_ == 0) return;
+    const float v[] = {
+        x,     y,     u0, v0,
+        x + w, y,     u1, v0,
+        x,     y + h, u0, v1,
+        x + w, y,     u1, v0,
+        x + w, y + h, u1, v1,
+        x,     y + h, u0, v1
+    };
+    glUniform4f(glGetUniformLocation(uiProgram_, "uColor"), r, g, b, a);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uUseGrad"), 0);
+    glUniform1f(glGetUniformLocation(uiProgram_, "uCorner"), 0.f);
+    glBindTexture(GL_TEXTURE_2D, fontTex_);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uUseTex"), 1);
+    glUniform1i(glGetUniformLocation(uiProgram_, "uTex"), 0);
     glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(0));

@@ -55,6 +55,38 @@ struct Canvas {
         }
     }
 
+    // yuvarlatılmış köşeli + gradyanlı kutu (GLES shader'ındaki SDF ile aynı)
+    void roundRectGrad(float x, float y, float ww, float hh,
+                       float r, float g, float b, float a,
+                       float r2, float g2, float b2, float a2,
+                       float corner) {
+        int x0 = static_cast<int>(std::floor(x)), y0 = static_cast<int>(std::floor(y));
+        int x1 = static_cast<int>(std::ceil(x + ww)), y1 = static_cast<int>(std::ceil(y + hh));
+        float cx = x + ww * 0.5f, cy = y + hh * 0.5f;
+        float hw = ww * 0.5f, hh2 = hh * 0.5f;
+        for (int yy = y0; yy < y1; ++yy) {
+            for (int xx = x0; xx < x1; ++xx) {
+                float px = xx + 0.5f - cx, py = yy + 0.5f - cy;
+                float alpha = 1.f;
+                if (corner > 0.5f) {
+                    float qx = std::fabs(px) - hw + corner;
+                    float qy = std::fabs(py) - hh2 + corner;
+                    float dx = std::max(qx, 0.f), dy = std::max(qy, 0.f);
+                    float d = std::min(std::max(qx, qy), 0.f) + std::sqrt(dx*dx + dy*dy) - corner;
+                    alpha = 1.f - std::clamp((d + 0.75f) / 1.5f, 0.f, 1.f);
+                    alpha = alpha * alpha * (3.f - 2.f * alpha);   // smoothstep
+                }
+                if (alpha <= 0.002f) continue;
+                float t = (hh2 > 0.f) ? std::clamp(py / hh2 * 0.5f + 0.5f, 0.f, 1.f) : 0.f;
+                float cr = r + (r2 - r) * t;
+                float cg = g + (g2 - g) * t;
+                float cb = b + (b2 - b) * t;
+                float ca = a + (a2 - a) * t;
+                blend(xx, yy, cr, cg, cb, ca * alpha);
+            }
+        }
+    }
+
     void rect(float x, float y, float ww, float hh, float r, float g, float b, float a) {
         int x0 = static_cast<int>(std::floor(x)), y0 = static_cast<int>(std::floor(y));
         int x1 = static_cast<int>(std::ceil(x + ww)), y1 = static_cast<int>(std::ceil(y + hh));
@@ -100,17 +132,61 @@ void putText(Canvas& c, const std::string& s, float x, float y, float px,
         }
     }
 
-    float cw = 6.f * px;
-    float total = codes.size() * cw;
+    // oransal genişlik tablosu — font_metrics.hpp ile BİREBİR aynı
+    static const uint8_t kAdv[95] = {
+    3,3,4,5,3,5,3,3,4,4,5,5,3,5,3,
+    5,5,4,5,5,5,5,5,5,5,5,3,3,4,5,
+    5,5,3,5,5,5,5,5,5,5,5,5,5,5,5,
+    5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+    3,3,3,5,3,5,5,5,5,5,4,5,5,4,3,
+    4,4,5,5,5,5,5,4,5,5,5,5,5,5,5,
+    5,3,3,3,3,
+    };
+
+    // px = 1 glif pikselinin ekran genişliği. İlerleme = glif genişliği
+    // + 1 glif pikseli boşluk. Çarpan YOK: eski 0.85 katsayısı harfleri
+    // üst üste bindiriyordu (R→A kaynaşması).
+    auto advOf = [&](uint8_t g)->float {
+        int a = (g >= 32 && g <= 126) ? kAdv[g - 32] : 3;
+        return (a + 1.f) * px;   // cihazla aynı harf aralığı
+    };
+    float total = 0.f;
+    for (uint8_t g : codes) total += advOf(g);
     float ox = x;
     if (align == 1) ox -= total * 0.5f;
     else if (align == 2) ox -= total;
 
+    // ---- anti-aliased yakınlaştırma ----
+    // Glif 5x7 tabandan 3x ölçeklenir (15x21). Hedef piksel ölçeğinde
+    // TEK örnekleme yapılır: her hedef piksel için glif uzayında
+    // 3x3 süper-örnek alınır. Üst üste binme/sızma olmaz.
+    const int SS = 3;
     for (size_t k = 0; k < codes.size(); ++k) {
-        for (int gy = 0; gy < 7; ++gy)
-            for (int gx = 0; gx < 5; ++gx)
-                if (Canvas::glyphPixel(codes[k], gx, gy))
-                    c.rect(ox + k * cw + gx * px, y + gy * px, px, px, r, g, b, 1.f);
+        int aw = (codes[k] >= 32 && codes[k] <= 126) ? kAdv[codes[k] - 32] : 3;
+        int dw = std::max(1, static_cast<int>(std::round(aw * px)));
+        int dh = std::max(1, static_cast<int>(std::round(7.f * px)));
+        float bx = ox;
+        for (size_t q = 0; q < k; ++q) bx += advOf(codes[q]);
+
+        for (int j = 0; j < dh; ++j) {
+            for (int i = 0; i < dw; ++i) {
+                int on = 0;
+                for (int sy = 0; sy < SS; ++sy) {
+                    for (int sx = 0; sx < SS; ++sx) {
+                        // hedef alt-piksel → glif uzayı (0..aw, 0..7)
+                        float gx = (i + (sx + 0.5f) / SS) / dw * aw;
+                        float gy = (j + (sy + 0.5f) / SS) / dh * 7.f;
+                        int px_ = static_cast<int>(gx);
+                        int py_ = static_cast<int>(gy);
+                        if (px_ < 0 || px_ >= 5 || py_ < 0 || py_ >= 7) continue;
+                        if (Canvas::glyphPixel(codes[k], px_, py_)) ++on;
+                    }
+                }
+                float a = static_cast<float>(on) / (SS * SS);
+                if (a < 0.03f) continue;
+                c.blend(static_cast<int>(bx) + i, static_cast<int>(y) + j, r, g, b, a);
+            }
+        }
     }
 }
 
@@ -199,8 +275,15 @@ int main(int argc, char** argv) {
     for (const DrawItem& it : list.items()) {
         switch (it.cmd) {
             case DrawCmd::Rect:
-                c.rect(it.rect.x, it.rect.y, it.rect.w, it.rect.h,
-                       it.color.r, it.color.g, it.color.b, it.color.a);
+                if (it.corner > 0.5f || it.hasColor2) {
+                    Color b2 = it.hasColor2 ? it.color2 : it.color;
+                    c.roundRectGrad(it.rect.x, it.rect.y, it.rect.w, it.rect.h,
+                                    it.color.r, it.color.g, it.color.b, it.color.a,
+                                    b2.r, b2.g, b2.b, b2.a, it.corner);
+                } else {
+                    c.rect(it.rect.x, it.rect.y, it.rect.w, it.rect.h,
+                           it.color.r, it.color.g, it.color.b, it.color.a);
+                }
                 break;
             case DrawCmd::TexturedRect:
                 // atlas yok: renkli blok olarak temsil et
@@ -209,7 +292,10 @@ int main(int argc, char** argv) {
                 c.rect(it.rect.x, it.rect.y, it.rect.w, 2.f, 0.f, 0.f, 0.f, 0.5f);
                 break;
             case DrawCmd::Text:
-                putText(c, it.text, it.rect.x, it.rect.y, it.scale <= 0 ? 1.f : it.scale * 2.f,
+                // CİHAZLA AYNI ÖLÇEK: glif yüksekliği 14*scale,
+                // 7 glif satırı → 1 glif pikseli = 2*scale ekran pikseli.
+                putText(c, it.text, it.rect.x, it.rect.y,
+                        (it.scale <= 0.f ? 1.f : it.scale) * 2.f,
                         it.color.r, it.color.g, it.color.b, it.align);
                 break;
             case DrawCmd::Circle:
