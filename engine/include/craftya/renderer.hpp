@@ -20,6 +20,26 @@ struct GpuMesh {
     bool transparent = false;
 };
 
+// ---- DÖRTGEN → İNDEKS ----
+// Mesh verisi dörtgen (4 köşe) olarak saklanır. GPU'ya SIRALI indeks
+// (0,1,2,3,4,...) yüklenirse üçgenler dörtgen sınırlarını aşar ve dünya
+// ekranda çapraz şeritler halinde dağılır (gerçek sahada görülen hata).
+// Bu yardımcı tek doğru kaynağı sağlar: her dörtgen için (0,1,2)+(0,2,3).
+inline std::vector<uint32_t> quadIndices(size_t vertexCount) {
+    const size_t quads = vertexCount / 4;
+    std::vector<uint32_t> idx(quads * 6);
+    for (size_t q = 0; q < quads; ++q) {
+        const uint32_t b = static_cast<uint32_t>(q * 4);
+        idx[q * 6 + 0] = b + 0;
+        idx[q * 6 + 1] = b + 1;
+        idx[q * 6 + 2] = b + 2;
+        idx[q * 6 + 3] = b + 0;
+        idx[q * 6 + 4] = b + 2;
+        idx[q * 6 + 5] = b + 3;
+    }
+    return idx;
+}
+
 // Render istatistikleri
 struct RenderStats {
     int drawCalls = 0;
@@ -71,7 +91,9 @@ public:
     void uploadAtlas(const Image& img) override { stats_.textureBytes = img.pixels.size(); }
     void uploadMesh(GpuMesh& m, const MeshData& d, bool tr) override {
         m.uploaded = true; m.transparent = tr;
-        m.indexCount = static_cast<uint32_t>((d.opaque.size() + d.transparent.size()));
+        // GPU yoluyla AYNI kural: dörtgen başına 6 indeks
+        m.indexCount = static_cast<uint32_t>(quadIndices(
+            d.opaque.size() + d.transparent.size()).size());
         m.quadCount = d.quadCount;
         stats_.bufferBytes += d.bytes();
     }

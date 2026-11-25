@@ -299,9 +299,19 @@ void GLESBackend::uploadMesh(GpuMesh& mesh, const MeshData& data, bool transpare
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(verts.size() * sizeof(Vertex)),
                  verts.data(), GL_STATIC_DRAW);
 
+    // ---- KRİTİK: mesh verisi DÖRTGEN (4 köşe) olarak geliyor ----
+    // Önceden indeks tamponu 0,1,2,3,4,... şeklinde SIRALI dolduruluyordu.
+    // Bu durumda GPU'nun çizdiği üçgenler (0,1,2) ve (3,4,5) dörtgen
+    // sınırlarını aşıyor; dünya ekranda çapraz şeritler/dilimler halinde
+    // dağılıyordu. Dörtgen başına iki üçgen (0,1,2)+(0,2,3) üretilmeli.
+    if (verts.size() % 4 != 0) {
+        // beklenmeyen veri: güvenli tarafta kal, dörtgen varsayımıyla kırp
+        verts.resize(verts.size() - (verts.size() % 4));
+        if (verts.empty()) { mesh.uploaded = false; mesh.indexCount = 0; return; }
+    }
     if (mesh.ibo == 0) glGenBuffers(1, &mesh.ibo);
-    std::vector<unsigned int> idx(verts.size());
-    for (size_t i = 0; i < verts.size(); ++i) idx[i] = static_cast<unsigned int>(i);
+    // tek doğru kaynak: quadIndices (renderer.hpp) — testle korunuyor
+    const std::vector<uint32_t> idx = quadIndices(verts.size());
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ibo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,
                  static_cast<GLsizeiptr>(idx.size() * sizeof(unsigned int)),

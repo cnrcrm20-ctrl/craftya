@@ -17,6 +17,7 @@
 #include "craftya/recipes_gen.hpp"
 #include "craftya/world.hpp"
 #include "craftya/mesher.hpp"
+#include "craftya/renderer.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -733,6 +734,49 @@ static void testMeshScenario() {
     n3.onChat([&](uint8_t, const std::string& m) { got3 = m; });
     n1.sendChat("hazir misin");
     check(got2 == "hazir misin" && got3 == "hazir misin", "sohbet herkese ulasti");
+}
+
+// ---------------------------------------------------------- GPU MESH INDEKS
+// GERÇEK SAHA HATASI: dünyanın tamamı ekranda çapraz şeritler halinde
+// dağılıyordu. Nedeni: köşe tamponu dörtgen (4 köşe) ama indeks tamponu
+// SIRALI (0,1,2,3,...) yükleniyordu. GPU üçgenleri dörtgen sınırları
+// dışına taşıyordu. Bu test o hatanın geri gelmesini engeller.
+static void testQuadIndices() {
+    group("gpu mesh indeksleri");
+
+    // 3 dörtgen = 12 köşe → 18 indeks
+    MeshData d;
+    for (int q = 0; q < 3; ++q) {
+        for (int k = 0; k < 4; ++k) {
+            Vertex v{};
+            v.x = static_cast<float>(q * 4 + k);
+            d.opaque.push_back(v);
+        }
+    }
+    std::vector<uint32_t> idx = quadIndices(d.opaque.size());
+    check(idx.size() == 18, "3 dortgen icin 18 indeks");
+
+    bool eachQuadOk = true;
+    for (size_t q = 0; q < idx.size() / 6; ++q) {
+        const uint32_t b = static_cast<uint32_t>(q * 4);
+        const uint32_t* t = &idx[q * 6];
+        if (t[0] != b + 0 || t[1] != b + 1 || t[2] != b + 2 ||
+            t[3] != b + 0 || t[4] != b + 2 || t[5] != b + 3) eachQuadOk = false;
+    }
+    check(eachQuadOk, "her dortgen kendi koselerinden iki ucgen kuruyor");
+
+    // Hiçbir üçgen dörtgen sınırını aşmamalı (sıralı indeks hatası)
+    bool inRange = true;
+    for (uint32_t v : idx)
+        if (v >= d.opaque.size()) inRange = false;
+    check(inRange, "indeksler kosue sayisini asmiyor");
+
+    // Null arka uc da aynı kuralı kullanmalı
+    NullRenderBackend backend;
+    GpuMesh m;
+    backend.uploadMesh(m, d, false);
+    check(m.indexCount == 18, "arka uc dortgen basina 6 indeks yaziyor");
+    check(m.indexCount != d.opaque.size(), "sirali indeks hatasi yok (12 degil)");
 }
 
 // ---------------------------------------------------------------- ENGINE
@@ -1536,6 +1580,7 @@ int main() {
     testAudio();
     testGui();
     testMeshScenario();
+    testQuadIndices();
     testEngine();
     testContent();
     testInteract();
