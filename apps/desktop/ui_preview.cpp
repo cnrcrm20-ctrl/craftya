@@ -179,6 +179,20 @@ int main(int argc, char** argv) {
     } else if (mode == "main") {
         menus.open(MenuId::Main);
         menus.build(list, static_cast<float>(W), static_cast<float>(H));
+    } else if (mode == "modes") {
+        std::vector<MenuScreen::ModeRow> rows = {
+            {"Duello", "1v1 arena", 3, 2, true},
+            {"Takimli", "5v5 savas", 8, 10, true},
+            {"Mega", "6v6 karmasa", 11, 12, true},
+        };
+        menus.showModePanel(rows);
+        menus.build(list, static_cast<float>(W), static_cast<float>(H));
+    } else if (mode == "settings") {
+        menus.open(MenuId::Settings);
+        menus.screen().items[0].sublabel = "mesafe 6 chunk / golge acik";
+        menus.screen().items[1].sublabel = "muzik 60% / efekt 90%";
+        menus.screen().items[2].sublabel = "hassasiyet 100% / ters Y kapali";
+        menus.build(list, static_cast<float>(W), static_cast<float>(H));
     }
 
     // DrawList'i rasterize et

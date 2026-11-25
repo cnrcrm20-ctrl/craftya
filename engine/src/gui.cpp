@@ -415,7 +415,7 @@ void MenuSystem::back() { close(); }
 
 void MenuSystem::showModePanel(std::vector<MenuScreen::ModeRow> rows) {
     open(MenuId::ModeSelect);
-    current_.title = "MOD SEC";
+    current_.title = "MOD SE\xC3\x87";
     current_.modes = std::move(rows);
     current_.items.clear();
     for (const auto& m : current_.modes)

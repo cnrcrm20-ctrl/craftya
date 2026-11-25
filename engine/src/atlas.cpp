@@ -144,29 +144,55 @@ bool Atlas::drawStyled(int tileIndex, BlockId id, int face) {
     switch (d.style) {
         case kStyle_stone:
         case kStyle_noise: {
-            int v = (d.style == kStyle_noise) ? 26 : 14;
+            // Doğal taş: 4x4 hücrelerde hafif ton farkı + seyrek koyu benek.
+            // (piksel başına saf gürültü "bulanık leke" gibi görünüyordu)
+            int v = (d.style == kStyle_noise) ? 22 : 12;
+            int cell[4][4];
+            for (int cy = 0; cy < 4; ++cy)
+                for (int cx = 0; cx < 4; ++cx)
+                    cell[cy][cx] = std::uniform_int_distribution<int>(-v, v)(rng);
             for (int y = 0; y < TILE; ++y)
                 for (int x = 0; x < TILE; ++x) {
-                    int n = std::uniform_int_distribution<int>(-v, v)(rng);
+                    int n = cell[y / 4][x / 4];
+                    // çatlak/benek: seyrek koyu pikseller (taşın karakteri)
+                    if (small(rng) == 0) n -= 26;
+                    else if (small(rng) == 1) n += 16;
                     put(img_, tx, ty, x, y, R + n, G + n, B + n);
                 }
             break;
         }
         case kStyle_cobble: {
-            // yuvarlak taşlar: hücre merkezinden uzaklık
+            // Arnavut kaldırımı: düzensiz taş blokları, aralarında koyu harç.
+            // Hücrelere bölünür ama sınırlar kaydırılır → tekrar hissi kırılır.
+            int ox[4] = {0, 0, 0, 0}, oy[4] = {0, 0, 0, 0};
+            for (int i = 0; i < 4; ++i) {
+                ox[i] = std::uniform_int_distribution<int>(-1, 1)(rng);
+                oy[i] = std::uniform_int_distribution<int>(-1, 1)(rng);
+            }
+            int tone[4][4];
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c)
+                    tone[r][c] = std::uniform_int_distribution<int>(-14, 14)(rng);
             for (int y = 0; y < TILE; ++y)
                 for (int x = 0; x < TILE; ++x) {
-                    int cx = x % 8, cy = y % 8;
-                    float dist = std::sqrt(float((cx - 4) * (cx - 4) + (cy - 4) * (cy - 4)));
-                    int n = dist > 3.4f ? -34 : std::uniform_int_distribution<int>(-10, 10)(rng);
+                    int cx = (x + ox[y / 4]) / 4, cy = (y + oy[x / 4]) / 4;
+                    cx = (cx + 4) % 4; cy = (cy + 4) % 4;
+                    bool mortar = (x % 4 == 0) || (y % 4 == 0);
+                    int n = mortar ? -46 : tone[cy][cx];
+                    if (!mortar && small(rng) == 0) n += 18;   // üst yüzey parlaması
                     put(img_, tx, ty, x, y, R + n, G + n, B + n);
                 }
             break;
         }
         case kStyle_smooth: {
+            // pürüzsüz taş: üst-sol açık, alt-sağ koyu (ışık yönü hissi)
             for (int y = 0; y < TILE; ++y)
                 for (int x = 0; x < TILE; ++x) {
-                    int n = ((x == 0 || y == 0) ? -18 : 4) + small(rng) % 5;
+                    int edge = 0;
+                    if (x == 0 || y == 0) edge = -20;
+                    else if (x == TILE - 1 || y == TILE - 1) edge = -12;
+                    else if (x == 1 || y == 1) edge = 8;
+                    int n = edge + std::uniform_int_distribution<int>(-4, 4)(rng);
                     put(img_, tx, ty, x, y, R + n, G + n, B + n);
                 }
             break;
@@ -182,12 +208,37 @@ bool Atlas::drawStyled(int tileIndex, BlockId id, int face) {
                 }
             break;
         }
+        case kStyle_sand: {
+            // kum: ince taneli + hafif dalga deseni
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int wave = static_cast<int>(std::sin((x + y * 0.5f) * 0.8f) * 5.f);
+                    int n = wave + std::uniform_int_distribution<int>(-8, 8)(rng);
+                    if (small(rng) < 2) n -= 14;
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
         case kStyle_speckle: {
             for (int y = 0; y < TILE; ++y)
                 for (int x = 0; x < TILE; ++x) {
                     int n = std::uniform_int_distribution<int>(-12, 12)(rng);
                     if (small(rng) == 0) n += 30;
                     if (small(rng) == 1) n -= 30;
+                    put(img_, tx, ty, x, y, R + n, G + n, B + n);
+                }
+            break;
+        }
+        case kStyle_dirt: {
+            // toprak: koyu/açık kümeler halinde, tekdüze gürültü değil
+            int blob[8][8];
+            for (int r = 0; r < 8; ++r)
+                for (int c = 0; c < 8; ++c)
+                    blob[r][c] = std::uniform_int_distribution<int>(-18, 12)(rng);
+            for (int y = 0; y < TILE; ++y)
+                for (int x = 0; x < TILE; ++x) {
+                    int n = blob[y / 2][x / 2];
+                    if (small(rng) < 3) n -= 22;   // çakıl tanesi
                     put(img_, tx, ty, x, y, R + n, G + n, B + n);
                 }
             break;
@@ -261,38 +312,48 @@ bool Atlas::drawStyled(int tileIndex, BlockId id, int face) {
             break;
         }
         case kStyle_wool: {
+            // yün: örgü dokusu — 2x2 ilmek + aradaki gölge çukuru
             for (int y = 0; y < TILE; ++y)
                 for (int x = 0; x < TILE; ++x) {
-                    int n = (((x + y) % 4 == 0) ? 14 : -8) + small(rng) % 6;
+                    bool loop = ((x / 2 + y / 2) % 2) == 0;
+                    bool gap  = (x % 2 == 1) && (y % 2 == 1);
+                    int n = loop ? 16 : (gap ? -24 : 2);
+                    n += std::uniform_int_distribution<int>(-6, 6)(rng);
                     put(img_, tx, ty, x, y, R + n, G + n, B + n);
                 }
             break;
         }
         case kStyle_concrete: {
+            // beton: ince gözenek + seyrek hava boşluğu
             for (int y = 0; y < TILE; ++y)
                 for (int x = 0; x < TILE; ++x) {
-                    int n = small(rng) % 7;
+                    int n = std::uniform_int_distribution<int>(-7, 7)(rng);
+                    if (small(rng) < 2) n -= 13;        // gözenek
+                    if (small(rng) == 2) n += 9;
                     put(img_, tx, ty, x, y, R + n, G + n, B + n);
                 }
             break;
         }
         case kStyle_terracotta: {
-            for (int y = 0; y < TILE; ++y)
+            // pişmiş toprak: hafif yatay bantlar + tanecik
+            for (int y = 0; y < TILE; ++y) {
+                int band = (y % 8 == 0) ? -12 : ((y % 4 == 0) ? 5 : 0);
                 for (int x = 0; x < TILE; ++x) {
-                    int n = std::uniform_int_distribution<int>(-14, 8)(rng);
+                    int n = band + std::uniform_int_distribution<int>(-11, 9)(rng);
                     put(img_, tx, ty, x, y, R + n, G + n, B + n);
                 }
+            }
             break;
         }
         case kStyle_glass: {
-            clearTile(img_, tx, ty);
+            // cam: saydam orta + kenar çerçevesi + köşe parlaması
             for (int y = 0; y < TILE; ++y)
                 for (int x = 0; x < TILE; ++x) {
-                    bool border = (x == 0 || y == 0 || x == TILE - 1 || y == TILE - 1);
-                    bool shine = ((x + y) % 13 == 0) && x > 2 && y > 2;
-                    if (border) put(img_, tx, ty, x, y, R, G, B, 210);
-                    else if (shine) put(img_, tx, ty, x, y, 255, 255, 255, 90);
-                    else put(img_, tx, ty, x, y, R, G, B, 26);
+                    bool frame = (x == 0 || y == 0 || x == TILE - 1 || y == TILE - 1);
+                    bool shine = (x + y == 5) || (x + y == 6) || (x + y == 7);
+                    if (frame) put(img_, tx, ty, x, y, R + 20, G + 24, B + 26, 220);
+                    else if (shine) put(img_, tx, ty, x, y, 240, 248, 255, 150);
+                    else put(img_, tx, ty, x, y, R + 10, G + 14, B + 16, 42);
                 }
             break;
         }

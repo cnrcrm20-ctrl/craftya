@@ -396,6 +396,8 @@ constexpr uint8_t kStyle_books = 22;
 constexpr uint8_t kStyle_door = 23;
 constexpr uint8_t kStyle_flat = 24;
 constexpr uint8_t kStyle_lava = 26;
+constexpr uint8_t kStyle_sand = 27;   // kum: taneli + dalga
+constexpr uint8_t kStyle_dirt = 28;   // toprak: küme desenli
 
 struct BlockDef {
     BlockId id;
@@ -458,7 +460,7 @@ inline const std::array<BlockDef, BLOCK_COUNT>& blockRegistry() {
         {BEDROCK, "bedrock", "Ana Kaya", true, true, false, 0, 99999.00f, 0x2A2A2A, 0x000000, 0, Interact::None, 0},
         {QUARTZ_BLOCK, "quartz_block", "Kuvars", true, true, false, 0, 1.00f, 0xECE6DF, 0x000000, 2, Interact::None, 0},
         {SMOOTH_QUARTZ, "smooth_quartz", "Düz Kuvars", true, true, false, 0, 1.00f, 0xEFE9E2, 0x000000, 2, Interact::None, 0},
-        {DIRT, "dirt", "Toprak", true, true, false, 0, 1.00f, 0x8B5A3C, 0x000000, 5, Interact::None, 0},
+        {DIRT, "dirt", "Toprak", true, true, false, 0, 1.00f, 0x8B5A3C, 0x000000, kStyle_dirt, Interact::None, 0},
         {COARSE_DIRT, "coarse_dirt", "Kaba Toprak", true, true, false, 0, 1.00f, 0x7A4F35, 0x000000, 5, Interact::None, 0},
         {ROOTED_DIRT, "rooted_dirt", "Kök Toprak", true, true, false, 0, 1.00f, 0x96654A, 0x000000, 5, Interact::None, 0},
         {GRASS_BLOCK, "grass_block", "Çim", true, true, false, 0, 1.00f, 0x6A9C46, 0x79B04F, 7, Interact::None, 0},
@@ -467,8 +469,8 @@ inline const std::array<BlockDef, BLOCK_COUNT>& blockRegistry() {
         {MUD, "mud", "Çamur", true, true, false, 0, 1.00f, 0x4A3A34, 0x000000, 5, Interact::None, 0},
         {CLAY, "clay", "Kil", true, true, false, 0, 1.00f, 0x9EA3B4, 0x000000, 5, Interact::None, 0},
         {GRAVEL, "gravel", "Çakıl", true, true, false, 0, 1.00f, 0x8B8781, 0x000000, 4, Interact::None, 0},
-        {SAND, "sand", "Kum", true, true, false, 0, 1.00f, 0xDFD6A5, 0x000000, 4, Interact::None, 0},
-        {RED_SAND, "red_sand", "Kırmızı Kum", true, true, false, 0, 1.00f, 0xB56E3A, 0x000000, 4, Interact::None, 0},
+        {SAND, "sand", "Kum", true, true, false, 0, 1.00f, 0xDFD6A5, 0x000000, kStyle_sand, Interact::None, 0},
+        {RED_SAND, "red_sand", "Kırmızı Kum", true, true, false, 0, 1.00f, 0xB56E3A, 0x000000, kStyle_sand, Interact::None, 0},
         {SANDSTONE, "sandstone", "Kum Taşı", true, true, false, 0, 1.00f, 0xDDD3A1, 0x000000, 6, Interact::None, 0},
         {SMOOTH_SANDSTONE, "smooth_sandstone", "Düz Kum Taşı", true, true, false, 0, 1.00f, 0xE2D9A8, 0x000000, 2, Interact::None, 0},
         {RED_SANDSTONE, "red_sandstone", "Kırmızı Kum Taşı", true, true, false, 0, 1.00f, 0xB56B39, 0x000000, 6, Interact::None, 0},
