@@ -86,7 +86,12 @@ jobs:
           test "$ports" -eq "$rooms" || { echo "RCON portlari cakisiyor ($ports farkli, $rooms oda)"; exit 1; }
           # auth odasi da var -> 7 oda (6 oyun + limbo)
           test "$rooms" -eq 7 || { echo "oda sayisi 7 degil ($rooms)"; exit 1; }
-          echo "7 oda config uretildi (6 oyun + auth), RCON portlari ayrik"
+          # her odanin bellek degiskeni rooms.env'de olmali, yoksa compose patlar
+          for k in AUTH LOBBY SURVIVAL SKYBLOCK BEDWARS DUELLO PARKUR; do
+            grep -q "^${k}_MEM=." runtime/rooms.env \
+              || { echo "rooms.env: ${k}_MEM yok (compose 'required variable' hatasi)"; exit 1; }
+          done
+          echo "7 oda config uretildi (6 oyun + auth), RCON portlari ayrik, _MEM tam"
 
       - name: Compose tutarlılığı
         run: |

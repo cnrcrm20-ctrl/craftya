@@ -327,6 +327,9 @@ def main() -> int:
         "PORT_BEDWARS": "25569",
         "PORT_DUELLO": "25570",
         "PORT_PARKUR": "25571",
+        # limbo/auth odası: .env'de yoksa CI'da oda hiç render edilmiyordu
+        # → AUTH_MEM üretilmiyordu → 'docker compose up' patlıyordu.
+        "PORT_AUTH": "25572",
     }
     for k, v in defaults.items():
         env.setdefault(k, v)
