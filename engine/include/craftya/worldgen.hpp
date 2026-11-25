@@ -338,12 +338,32 @@ public:
     // Dolu dönerse gerçek kolon okunup ağaç yerleştirilir.
     struct Candidate { bool exists; int x, z; uint64_t seed; };
     Candidate treeCandidate(int gx, int gz) const {
+        // Izgara 4x4 blok. Bu ızgarada ağaç olup olmayacağı BİYOMA göre belirlenir;
+        // sabit eşik kullanmak ormanda bile ağaçları yok ediyordu.
+        int tx = gx * 4 + 1;    // ızgara merkezine yakın örnek nokta
+        int tz = gz * 4 + 1;
+        Column col = column(tx, tz);
+        float density = 0.f;
+        switch (col.biome) {
+            case Biome::Forest:    density = 0.55f; break;
+            case Biome::Taiga:     density = 0.42f; break;
+            case Biome::Swamp:     density = 0.30f; break;
+            case Biome::Plains:    density = 0.055f; break;
+            case Biome::Savanna:   density = 0.045f; break;
+            case Biome::Desert:    density = 0.030f; break;
+            case Biome::Mountains: density = 0.035f; break;
+            case Biome::Badlands:  density = 0.012f; break;
+            default:               density = 0.f;    break;
+        }
+        if (density <= 0.f) return {false, 0, 0, 0};
+        if (col.underwater || col.height > 128) return {false, 0, 0, 0};
+
         uint64_t s = blockSeed(gx, 0, gz, seed_ ^ 0xA11CEull);
         float roll = static_cast<float>(s & 0xFFFF) / 65535.f;
-        if (roll > 0.06f) return {false, 0, 0, 0};   // en yoğun biyomdan bile fazla
+        if (roll > density) return {false, 0, 0, 0};
         int ox = static_cast<int>((s >> 16) & 3);
         int oz = static_cast<int>((s >> 18) & 3);
-        return {true, gx * 4 - 3 + ox, gz * 4 - 3 + oz, s};
+        return {true, gx * 4 + ox, gz * 4 + oz, s};
     }
 
     TreeSpec treeAt(int wx, int wz, const Column& c) const {
@@ -365,15 +385,15 @@ public:
         if (c.biome == Biome::Beach || c.biome == Biome::Ocean) return t;
 
         // 4 blokluk ızgara → ağaçlar üst üste binmesin
-        int gx = (wx >= 0 ? wx : wx - 3) / 4;
-        int gz = (wz >= 0 ? wz : wz - 3) / 4;
+        int gx = wx >= 0 ? wx / 4 : -((-wx + 3) / 4);
+        int gz = wz >= 0 ? wz / 4 : -((-wz + 3) / 4);
         uint64_t s = blockSeed(gx, 0, gz, seed_ ^ 0xA11CEull);
         float roll = static_cast<float>(s & 0xFFFF) / 65535.f;
         if (roll > density) return t;
-        // ama sadece ızgaranın tek bir kolonunda doğsun
+        // ızgaranın tek bir kolonunda doğsun (treeCandidate ile aynı hesap)
         int ox = static_cast<int>((s >> 16) & 3);
         int oz = static_cast<int>((s >> 18) & 3);
-        if (wx != gx * 4 - 3 + ox || wz != gz * 4 - 3 + oz) return t;
+        if (wx != gx * 4 + ox || wz != gz * 4 + oz) return t;
 
         Rng r(s);
         t.exists = true;
@@ -404,7 +424,8 @@ public:
             t.leanDir = r.irange(0, 3);
         }
         t.branches = static_cast<int>(r.unit() * 3.f);
-        t.blobby = (t.type == 0 || t.type == 5);
+        // 0=meşe 1=huş 5=karaağaç 6=köknar → küre/bulanık taç
+        t.blobby = (t.type == 0 || t.type == 1 || t.type == 5 || t.type == 6);
         return t;
     }
 

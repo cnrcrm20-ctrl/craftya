@@ -437,11 +437,23 @@ private:
         BlockId leafB = gen_.leavesFor(t.type);
 
         // --- gövde ---
-        int topY = baseY;
+        // Gerçek ağaçlarda gövde kalınlaşır: küçük ağaç 1x1, orta 2x2, dev 3x3.
+        // (eskiden hep 1x1 idi → direk gibi görünüyordu)
+        int topY = baseY + t.height - 1;   // gövdenin EN ÜST bloğu
+        int trunkTop = baseY + t.height - 1;
+        int thick = 1;
+        if (t.height >= 11) thick = 3;
+        else if (t.height >= 8) thick = 2;
+        if (t.type == 3) thick = 1;          // bambu ince kalır
+        int half = thick / 2;
         for (int i = 0; i < t.height; ++i) {
             auto [ox, oz] = leanOffset(i);
-            put(tx + ox, baseY + i, tz + oz, logB, true);
-            topY = baseY + i;
+            // üst kısımda gövde incelir (doğal görünüm)
+            int taper = (i > t.height * 3 / 4 && thick > 1) ? thick - 1 : thick;
+            int h2 = taper / 2;
+            for (int dx = -h2; dx <= half; ++dx)
+                for (int dz = -h2; dz <= half; ++dz)
+                    put(tx + ox + dx, baseY + i, tz + oz + dz, logB, true);
         }
 
         // --- dallar (ladin/meşe için) ---
@@ -464,13 +476,13 @@ private:
             // ladin: koni biçimli katmanlar
             int layers = t.height / 2 + 1;
             for (int l = 0; l < layers; ++l) {
-                int y = baseY + t.height - 1 - l;
+                int y = trunkTop - l;
                 float rad = t.crownRadius * (1.f - static_cast<float>(l) / static_cast<float>(layers + 1));
                 int ir = static_cast<int>(std::ceil(rad));
                 for (int dx = -ir; dx <= ir; ++dx)
                     for (int dz = -ir; dz <= ir; ++dz) {
                         if (dx*dx + dz*dz > rad * rad) continue;
-                        if (dx == 0 && dz == 0) continue;
+                        if (dx >= -half && dx <= half && dz >= -half && dz <= half) continue;
                         put(tx + dx, y, tz + dz, leafB, false);
                     }
             }
@@ -492,8 +504,8 @@ private:
             // meşe/huş/karaağaç: düzensiz küre — her ağaçta farklı
             float rad = t.crownRadius;
             int ir = static_cast<int>(std::ceil(rad)) + 1;
-            for (int dy = -2; dy <= 2; ++dy) {
-                int y = topY + dy;
+            for (int dy = -2; dy <= 3; ++dy) {
+                int y = trunkTop + dy;
                 float layerRad = rad * (1.f - std::fabs(static_cast<float>(dy)) * 0.20f);
                 if (layerRad <= 0.6f) continue;
                 for (int dx = -ir; dx <= ir; ++dx)
@@ -502,7 +514,9 @@ private:
                         float jitter = (worldgen::blockUnit(tx + dx, y, tz + dz, t.rngSeed) - 0.5f) * 1.1f;
                         float d2 = static_cast<float>(dx*dx + dz*dz);
                         if (d2 > (layerRad + jitter) * (layerRad + jitter)) continue;
-                        if (dx == 0 && dz == 0 && dy <= 0) continue;   // gövde zaten orada
+                        // gövde kolonlarını yaprakla ezme
+                        if (dy <= 0 && dx >= -half && dx <= half && dz >= -half && dz <= half)
+                            continue;
                         put(tx + dx, y, tz + dz, leafB, false);
                     }
             }
