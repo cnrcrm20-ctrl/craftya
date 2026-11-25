@@ -166,25 +166,40 @@ jobs:
       - name: Proxy pluginleri yüklendi mi (/hub / Geyser / LibreLogin)
         run: |
           mkdir -p logs
-          # Sessiz başarısızlığı yakala: plugin yüklenmezse /hub oyunda YOK olur,
-          # oyuncu "komut yok" der ve kimse nedenini bilmez. Log'dan kanıtla.
-          docker compose -f docker-compose.hub.yml logs velocity > logs/velocity.log 2>&1 || true
+          # Port açılır açılmaz plugin log'u henüz gelmemiş olabilir. Başlangıç
+          # loglarını 2 dk boyunca yenile; sonra JAR'ları ve container'ı doğrula.
+          for i in $(seq 1 12); do
+            docker compose -f docker-compose.hub.yml logs --no-color --since=10m velocity > logs/velocity.log 2>&1 || true
+            if grep -qiE 'velocity-hub-command|Geyser|Floodgate|LibreLogin' logs/velocity.log; then
+              echo "Velocity plugin başlangıç logu görüldü (tur $i)"
+            fi
+            sleep 10
+          done
+          docker compose -f docker-compose.hub.yml logs --no-color --since=10m velocity > logs/velocity.log 2>&1 || true
+          docker inspect -f 'velocity running={{.State.Running}}' hub-velocity | tee logs/velocity-state.log
+          docker inspect -f '{{.State.Running}}' hub-velocity | grep -q true || {
+            echo "✗ Velocity container çalışmıyor"; exit 1; }
           rc=0
-          for plug in velocity-hub-command Geyser Floodgate LibreLogin; do
-            if grep -qi "$plug" logs/velocity.log; then
-              echo "✓ $plug yüklendi"
+          for jar in velocity-hub-command geyser floodgate librelogin; do
+            if [ -s "runtime/proxy-plugins/$jar.jar" ]; then
+              echo "✓ $jar.jar mevcut"
             else
-              echo "✗ $plug YÜKLENMEDİ — /hub /lobby veya Bedrock girişi çalışmaz"
+              echo "✗ zorunlu proxy plugin JAR eksik: $jar.jar"
               rc=1
             fi
           done
-          # komut kaydı log'da görünür (plugin başına değişebilir → uyarı, hata değil)
-          grep -iE "registered.*(hub|lobby)|/hub|/lobby" logs/velocity.log | head -5 \
+          # Log adları sürüme göre değişebildiği için eşleşmeyen isimleri uyarı
+          # say; eksik dosya/container ise yukarıda kesin hata olarak yakalanır.
+          for plug in velocity-hub-command Geyser Floodgate LibreLogin; do
+            grep -qi "$plug" logs/velocity.log \
+              && echo "✓ $plug logda göründü" \
+              || echo "! $plug adı logda bulunmadı; velocity.log artifact'ına bak"
+          done
+          grep -iE 'registered.*(hub|lobby)|/hub|/lobby' logs/velocity.log | head -5 \
             && echo "✓ /hub komutu log'da göründü" \
-            || echo "! /hub komut kaydı log'da görünmedi (plugin yine çalışıyor olabilir)"
-          # ilk 40 satır her zaman dursun (teşhis için)
-          echo "--- velocity log (ilk 40) ---"
-          head -40 logs/velocity.log || true
+            || echo "! /hub komut kaydı log'da görünmedi"
+          echo "--- velocity log (ilk 80) ---"
+          head -80 logs/velocity.log || true
           exit $rc
 
       - name: Yetkiler yüklendi mi (LuckPerms + kurucu)
@@ -274,8 +289,12 @@ jobs:
         if: always()
         id: archive
         run: |
-          ./scripts/world-sync.sh save || true
-          ./scripts/world-sync.sh upload
+          set -o pipefail
+          mkdir -p logs runtime/data artifacts
+          ./scripts/world-sync.sh save 2>&1 | tee logs/world-save.log || true
+          echo "--- kalıcı dünya dizinleri ---" | tee logs/world-data.log
+          find runtime/data -maxdepth 3 -type d -print | tee -a logs/world-data.log
+          ./scripts/world-sync.sh upload 2>&1 | tee logs/world-upload.log
 
       - name: Dünyayı artifact olarak yükle
         if: always()
