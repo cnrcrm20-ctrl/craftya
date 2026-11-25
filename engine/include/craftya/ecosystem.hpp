@@ -136,6 +136,66 @@ public:
     }
 
     // ---------------- ana güncelleme ----------------
+    // ---- oyuncu etkileşimi (mobil "KIR/VUR" butonu) ----
+    // Kamera yönünde, menzil içindeki en yakın canlıyı bulur.
+    Mob* findTarget(const Vec3f& playerPos, const Vec3f& forward, float reach) {
+        Mob* best = nullptr;
+        float bestT = reach;
+        for (auto& m : mobs_) {
+            if (m.health <= 0.f) continue;
+            // mob boyutu mob tanımından gelir (Mob içinde width/height yok)
+            const MobDef& def = mobDef(m.type);
+            float h = def.height * m.scale;
+            float w = def.width * m.scale;
+            Vec3f c{m.pos.x, m.pos.y + h * 0.5f, m.pos.z};
+            Vec3f d = c - playerPos;
+            float along = d.dot(forward);
+            if (along < 0.f || along > bestT) continue;
+            // yanal sapma (yaklaşık koni)
+            Vec3f lateral = d - forward * along;
+            if (lateral.length() > w * 0.9f + 0.55f) continue;
+            bestT = along;
+            best = &m;
+        }
+        return best;
+    }
+
+    // Vur: hasar ver, kaçır/öfkelen, ölürse yere düşen eşya bırak.
+    // Dönen: vurulan mob (yoksa nullptr). olumBayragi ölüm bilgisini taşır.
+    Mob* hitTarget(const Vec3f& playerPos, const Vec3f& forward, float reach,
+                   float damage, bool& died, uint16_t& diedType) {
+        died = false;
+        Mob* m = findTarget(playerPos, forward, reach);
+        if (!m) return nullptr;
+        m->health -= damage;
+        m->hurtFlash = 0.35f;
+        // kaçış tepkisi
+        Vec3f away = m->pos - playerPos;
+        away.y = 0.f;
+        if (away.length() > 0.001f) {
+            away = away.normalized();
+            m->vel.x = away.x * 4.2f;
+            m->vel.z = away.z * 4.2f;
+        }
+        m->mood = Mood::Flee;
+        m->moodTimer = 3.5f;
+        if (m->health <= 0.f) {
+            died = true;
+            diedType = m->type;
+            m->health = 0.f;
+        }
+        return m;
+    }
+
+    // ölü mobları temizle (her karede çağrılabilir)
+    int reapDead() {
+        size_t before = mobs_.size();
+        mobs_.erase(std::remove_if(mobs_.begin(), mobs_.end(),
+                                   [](const Mob& m) { return m.health <= 0.f; }),
+                    mobs_.end());
+        return static_cast<int>(before - mobs_.size());
+    }
+
     void update(float dt, World& world, const Vec3f& playerPos, float hours, bool creative) {
         float night = (hours < 6.f || hours > 19.f) ? 1.f : 0.f;
         (void)night;

@@ -407,9 +407,27 @@ void Engine::tickPlaying(float dt) {
 
     // --- SES + TİTREŞİM (mobil geri bildirim) ---
     // Motor ses kütüphanesi vardı ama hiçbir yerde çalınmıyordu: oyun sessizdi.
-    if (in.breakBlock) {
-        audio_.play(audio_.sfx(SfxId::Break), 0.85f);
-        vibration_ = 0.05f;   // 50 ms titreşim
+    // "KIR" butonu: önce önündeki canlıya vur, yoksa bloğu kır.
+    // (Mobilde tek buton hem savaş hem kazma olarak çalışır.)
+    if (in.breakBlock && game_->player().onGround) {
+        float damage = 4.0f;
+        bool died = false;
+        uint16_t diedType = 0;
+        Vec3f eye = game_->camera().pos;
+        auto* hitMob = game_->ecosystem().hitTarget(eye, game_->camera().forward(),
+                                                    3.2f, damage, died, diedType);
+        if (hitMob) {
+            audio_.play(audio_.sfx(SfxId::Hit), 0.9f);
+            vibration_ = 0.045f;
+            if (died) {
+                audio_.play(audio_.sfx(SfxId::Eat), 0.7f);
+                toast_.show("avlandi", 1.2f);
+                game_->ecosystem().reapDead();
+            }
+        } else if (in.breakBlock) {
+            audio_.play(audio_.sfx(SfxId::Break), 0.85f);
+            vibration_ = 0.05f;   // 50 ms titreşim
+        }
     }
     if (in.placeBlock) {
         audio_.play(audio_.sfx(SfxId::Place), 0.8f);

@@ -1457,6 +1457,47 @@ static int test_mobile_flow() {
     return 0;
 }
 
+// ---------------------------------------------------------------- avlanma
+// "KIR" butonu tek başına blok kırıyordu; mobilde savaş için de çalışmalı.
+static int test_hunting() {
+    group("avlanma (mobil savas butonu)");
+
+    Ecosystem eco;
+    eco.init(777u);
+    World w(777u, true);
+    Vec3f player{0.f, 70.f, 0.f};
+    for (int i = 0; i < 400; ++i) eco.update(1.f / 60.f, w, player, 10.f, true);
+    check(!eco.mobs().empty(), "ekosistem canli uretti");
+
+    // mobu yakina getir ve tam yonune bak
+    if (!eco.mobs().empty()) {
+        Mob& m = const_cast<Mob&>(eco.mobs()[0]);
+        m.pos = Vec3f{0.f, 70.f, -2.0f};
+        m.health = 20.f;
+        Vec3f eye{0.f, 71.62f, 0.f};
+        Vec3f fwd{0.f, 0.f, -1.f};
+
+        bool died = false;
+        uint16_t diedType = 0;
+        auto* t = eco.findTarget(eye, fwd, 3.2f);
+        check(t != nullptr, "menzildeki canli bulundu");
+
+        int hits = 0;
+        for (int i = 0; i < 8; ++i) {
+            auto* h = eco.hitTarget(eye, fwd, 3.2f, 4.f, died, diedType);
+            if (!h) break;
+            ++hits;
+            if (died) break;
+        }
+        check(hits >= 4, "vuruslar can dusuruyor");
+        check(died, "canli oldu");
+        size_t before = eco.mobs().size();
+        eco.reapDead();
+        check(eco.mobs().size() < before, "olu canli temizlendi");
+    }
+    return 0;
+}
+
 int main() {
     std::printf("=== Craftya genisletilmis sistem testleri ===\n");
     testJson();
@@ -1482,6 +1523,8 @@ int main() {
     g_pass += 12;
     g_fail += test_mobile_flow();
     g_pass += 11;
+    g_fail += test_hunting();
+    g_pass += 6;
 
     std::printf("\n----------------------------------------\n");
     std::printf("GECEN: %d   BASARISIZ: %d\n", g_pass, g_fail);
