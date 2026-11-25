@@ -79,9 +79,21 @@ jobs:
           python3 scripts/gradient.py --apply
           # sırlar boşsa render.py üretir (run içinde yaşar) — sunucu yine çalışır
           python3 scripts/render.py
+          # compose, sırları ve bellek limitlerini .env'den okur.
+          # Sadece rooms.env eklemek YETMİYOR: VELOCITY_SECRET / RCON_PASSWORD
+          # da .env'de olmalı, yoksa 'docker compose up' ${VAR:?} yüzünden patlar.
+          test -f .env || cp .env.example .env
+          # sırlar boşsa üret (CI'da secret yoksa sunucu yine çalışsın)
+          if ! grep -qE "^VELOCITY_SECRET=.+" .env; then
+            echo "VELOCITY_SECRET=$(openssl rand -base64 24 | tr -d '/+=')" >> .env
+          fi
+          if ! grep -qE "^RCON_PASSWORD=.+" .env; then
+            echo "RCON_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=')" >> .env
+          fi
           # container bellek limitleri (render üretir) → compose bunu okur
-          cat runtime/rooms.env >> .env
-          grep -E "_MEM=" .env | head -10
+          grep -q "_MEM=" .env || cat runtime/rooms.env >> .env
+          echo "--- .env anahtarları ---"
+          grep -oE "^[A-Z0-9_]+=" .env | tr -d '=' | tr '\n' ' '; echo
 
       - name: Plugin ve çekirdek indir
         run: |
