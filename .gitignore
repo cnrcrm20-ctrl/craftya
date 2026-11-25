@@ -7,3 +7,8 @@ android/app/build/
 android/.gradle/
 local.properties
 *.log
+mcserver/.env
+mcserver/data/
+mcserver/backups/
+mcserver/plugins/*.jar
+!mcserver/plugins/.gitkeep

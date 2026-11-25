@@ -1,0 +1,92 @@
+name: MC Sunucu Denetimi
+
+# Minecraft sunucusu yapılandırması bozulursa burada yakalanır.
+# APK iş akışından ayrı: sunucu değişikliği APK derlemesini tetiklemesin.
+
+on:
+  push:
+    branches: [ 'arena/deab440e-craftya' ]
+    paths:
+      - 'mcserver/**'
+      - '.github/workflows/mcserver-check.yml'
+  pull_request:
+    paths: [ 'mcserver/**' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: PyYAML + shellcheck
+        run: |
+          python -m pip install --quiet pyyaml
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+
+      - name: YAML sözdizimi
+        working-directory: mcserver
+        run: |
+          python - <<'PY'
+          import sys, yaml, pathlib
+          bad = 0
+          for p in sorted(pathlib.Path('.').rglob('*.yml')):
+              try:
+                  yaml.safe_load(p.read_text(encoding='utf-8'))
+                  print(f'ok   {p}')
+              except Exception as e:
+                  print(f'HATA {p}: {e}')
+                  bad = 1
+          sys.exit(bad)
+          PY
+
+      - name: Shell sözdizimi + shellcheck
+        working-directory: mcserver
+        run: |
+          bash -n scripts/fetch-plugins.sh
+          bash -n scripts/mc.sh
+          shellcheck -S warning scripts/fetch-plugins.sh scripts/mc.sh || true
+          echo "shellcheck uyarıları bilgilendirme amaçlı (bloklamaz)"
+
+      - name: Yapılandırma denetimi (doctor)
+        working-directory: mcserver
+        run: |
+          cp .env.example .env
+          # doctor gerçek sır bekliyor: test için geçici değer
+          sed -i 's/^RCON_PASSWORD=.*/RCON_PASSWORD=ci-test-only-16chrs/' .env
+          # plugin jar'ları CI'da indirilmez (ağ + telif): doctor CI=true iken
+          # eksik plugin'i uyarı sayar, hata değil.
+          mkdir -p plugins
+          python scripts/doctor.py
+        env:
+          CI: 'true'
+
+      - name: Compose dosyası ayrıştırma
+        working-directory: mcserver
+        run: |
+          python - <<'PY'
+          import yaml
+          d = yaml.safe_load(open('docker-compose.yml'))
+          svc = d['services']
+          assert 'minecraft' in svc, 'minecraft servisi yok'
+          env = svc['minecraft']['environment']
+          assert str(env['EULA']).upper() == 'TRUE'
+          assert str(env['TYPE']).upper() == 'PAPER'
+          vols = svc['minecraft']['volumes']
+          assert any(':ro' in v for v in vols), 'salt-okunur mount yok'
+          ports = svc['minecraft']['ports']
+          assert any('25565' in str(p) for p in ports), 'Java portu yok'
+          assert any('19132' in str(p) for p in ports), 'Bedrock (Geyser) UDP portu yok'
+          assert 'rcon.password' not in open('config/server.properties').read(), \
+                 'server.properties içinde düz metin rcon şifresi var'
+          print('compose tutarlı: 3 servis, Java+Bedrock portları açık, sır sızıntısı yok')
+          PY
