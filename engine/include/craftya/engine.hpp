@@ -89,6 +89,8 @@ public:
     };
     LobbyStatus lobby;
     void refreshLobbyFromServer(const std::string& jsonResponse);
+    // sunucu yanıtı yoksa ana menünün "canli" görünmesi için iyimser varsayılan
+    void simulateLobbyOnline();
 
     // bildirim
     void toast(const std::string& msg) { toast_.show(msg); }

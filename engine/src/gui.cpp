@@ -474,36 +474,47 @@ void MenuSystem::open(MenuId id) {
 
     switch (id) {
         case MenuId::Main:
+            // ===== SUNUCU MERKEZLİ ANA MENÜ =====
+            // "Tek Oyunculu" YOK: oyun bir sunucu oyunu. Oyuncu ya
+            // "Sunucuya Gir" der ya da sunucu listesinden seçer.
             current_.title = "CRAFTYA";
+            current_.hero = true;
+            current_.subtitle = "sunucu dunyasi \xC2\xB7 canli ekosistem";
+            current_.footer = "v3.0 · 457 icerik · mobil";
             current_.items = {
-                {"Oyna", "dunyan olustur", true, nullptr},
-                {"Ayarlar", "grafik / ses / kontrol", true, nullptr},
-                {"Cikis", "", true, nullptr},
+                {"Sunucuya Gir", "en kalabalik dunya", true, nullptr, "canli", true, "", "G"},
+                {"Sunucular", "lobi listesi", true, nullptr, "", false, "", "S"},
+                {"Karakter", "gorunum / isim", true, nullptr, "", false, "", "K"},
+                {"Ayarlar", "grafik / ses / kontrol", true, nullptr, "", false, "", "A"},
             };
             break;
         case MenuId::Play:
-            current_.title = "OYNA";
+            // Geriye dönük: lobi listesi (artık ana menüden geliniyor)
+            current_.title = "SUNUCULAR";
+            current_.subtitle = "bir dunya sec";
             current_.items = {
-                {"Tek Oyunculu", "sonsuz dunya", true, nullptr},
-                {"Lobi", "oyun modlari", true, nullptr},
-                {"Geri", "", true, nullptr},
+                {"Lobi", "oyun modlari", true, nullptr, "", false, "", "L"},
+                {"Geri", "", true, nullptr, "", false, "", "G"},
             };
             break;
         case MenuId::Settings:
             current_.title = "AYARLAR";
+            current_.subtitle = "oyun deneyimi";
             current_.items = {
-                {"Grafik", "golus / mesafe / FPS", true, nullptr},
-                {"Ses", "muzik / efekt", true, nullptr},
-                {"Kontrol", "hassasiyet / ters Y", true, nullptr},
-                {"Geri", "", true, nullptr},
+                {"Grafik", "golus / mesafe / FPS", true, nullptr, "", false, "", "G"},
+                {"Ses", "muzik / efekt", true, nullptr, "", false, "", "S"},
+                {"Kontrol", "hassasiyet / ters Y", true, nullptr, "", false, "", "K"},
+                {"Geri", "", true, nullptr, "", false, "", "G"},
             };
             break;
         case MenuId::Pause:
             current_.title = "DURAKLATILDI";
+            current_.subtitle = "dunyaya donmeye hazir misin";
             current_.items = {
-                {"Devam Et", "", true, nullptr},
-                {"Ayarlar", "", true, nullptr},
-                {"Ana Menu", "", true, nullptr},
+                {"Devam Et", "", true, nullptr, "", false, "", "D"},
+                {"Sunucular", "", true, nullptr, "", false, "", "S"},
+                {"Ayarlar", "", true, nullptr, "", false, "", "A"},
+                {"Ana Menu", "", true, nullptr, "", false, "", "M"},
             };
             break;
         case MenuId::Inventory:
@@ -544,10 +555,27 @@ void MenuSystem::showModePanel(std::vector<MenuScreen::ModeRow> rows) {
     current_.title = "MOD SE\xC3\x87";
     current_.modes = std::move(rows);
     current_.items.clear();
-    for (const auto& m : current_.modes)
-        current_.items.push_back({m.name, m.subtitle + "  " +
-                                  std::to_string(m.livePlayers) + " oyuncu", m.available, nullptr});
-    current_.items.push_back({"Geri", "", true, nullptr});
+    // Sunucu listesi: her mod bir "sunucu" gibi görünür — sağda doluluk
+    // hapı ve canlı nokta. Tek oyunculu seçenek yok.
+    current_.title = "SUNUCULAR";
+    current_.subtitle = "canli lobiler";
+    for (size_t i = 0; i < current_.modes.size(); ++i) {
+        const auto& md = current_.modes[i];
+        MenuItem it;
+        it.label = md.name;
+        it.sublabel = md.subtitle + "  ·  " + std::to_string(md.livePlayers) + "/" +
+                      std::to_string(md.capacity) + " oyuncu";
+        it.enabled = md.available;
+        it.live = md.livePlayers > 0;
+        it.badge = std::to_string(md.livePlayers) + "/" + std::to_string(md.capacity);
+        it.icon = md.name.empty() ? "?" : md.name.substr(0, 1);
+        if (i == 0) it.section = "OYUN MODLARI";
+        current_.items.push_back(it);
+    }
+    MenuItem back;
+    back.label = "Geri";
+    back.icon = "G";
+    current_.items.push_back(back);
 }
 
 void MenuSystem::build(DrawList& out, float screenW, float screenH) {
@@ -555,147 +583,260 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
     itemRects_.clear();
     modeRects_.clear();
 
-    // ================= MODERN MENÜ =================
-    // Eski görünüm: düz siyah dikdörtgen + kalın yeşil şerit (BIOS gibi).
-    // Yeni: bulanık arka plan + gölgeli cam panel + yuvarlatılmış
-    // gradyan kartlar + yumuşak tipografi.
     const float m = std::min(screenW, screenH);
-    const float rad = m * 0.045f;          // panel köşe yarıçapı
-    const float cardRad = m * 0.030f;      // kart köşe yarıçapı
+    const bool hero = current_.hero;
+    const float rad = m * 0.052f;        // panel köşe yarıçapı
+    const float cardRad = m * 0.030f;    // kart köşe yarıçapı
 
-    // arka plan: çok katmanlı dikey gradyan (hafif "blur" hissi)
-    out.gradient(Rect{0, 0, screenW, screenH * 0.5f},
-                 Color{0.03f, 0.05f, 0.09f, 0.90f},
-                 Color{0.05f, 0.07f, 0.12f, 0.86f});
-    out.gradient(Rect{0, screenH * 0.5f, screenW, screenH * 0.5f},
-                 Color{0.05f, 0.07f, 0.12f, 0.86f},
-                 Color{0.02f, 0.03f, 0.06f, 0.94f});
+    // ---- ARKA PLAN: derin gradyan + yumuşak vurgu hâleleri ----
+    out.gradient(Rect{0, 0, screenW, screenH * 0.55f},
+                 Color{0.031f, 0.047f, 0.086f, 0.97f},
+                 Color{0.043f, 0.063f, 0.110f, 0.97f});
+    out.gradient(Rect{0, screenH * 0.55f, screenW, screenH * 0.45f},
+                 Color{0.043f, 0.063f, 0.110f, 0.97f},
+                 Color{0.016f, 0.024f, 0.043f, 0.99f});
+    // üstte sıcak ışık (gün doğumu hissi) — düz panel görünümünü kırar
+    out.gradient(Rect{0, 0, screenW, screenH * 0.34f},
+                 Color{0.16f, 0.42f, 0.34f, 0.22f},
+                 Color{0.10f, 0.30f, 0.26f, 0.0f});
+    // sağ üstte ikinci hâle (derinlik)
+    out.gradient(Rect{screenW * 0.55f, 0, screenW * 0.45f, screenH * 0.28f},
+                 Color{0.20f, 0.30f, 0.62f, 0.16f},
+                 Color{0.20f, 0.30f, 0.62f, 0.0f});
 
-    float pw = std::min(screenW * 0.92f, 720.f);
-    float rowH = std::min(76.f, screenH * 0.125f);
-    int n = static_cast<int>(current_.items.size());
+    // ---- PANEL ÖLÇÜLERİ ----
+    const int n = static_cast<int>(current_.items.size());
+    const bool grid = (current_.id == MenuId::Inventory || current_.id == MenuId::Crafting);
+
+    // bölüm başlığı sayısı (kart yüksekliğini o etkiler)
+    int sections = 0;
+    for (int i = 0; i < n; ++i)
+        if (!current_.items[i].section.empty()) ++sections;
+
+    const float pw = std::min(screenW * 0.94f, 760.f);
+    const float secH = m * 0.070f;                 // bölüm başlığı yüksekliği
+    // başlık bloğunun gerçek yüksekliği (metin taşmasını önler)
+    const float heroH = hero ? (m * 0.055f + 14.f * (m * 0.0046f) + m * 0.012f + 3.f +
+                                m * 0.014f + 14.f * (m * 0.0030f) + m * 0.026f)
+                             : (m * 0.048f + 14.f * (m * 0.0040f) + m * 0.010f + 2.5f +
+                                m * 0.012f + 14.f * (m * 0.0028f) + m * 0.024f);
+    const float footerH = current_.footer.empty() ? 0.f : m * 0.070f;
+
+    float rowH = std::min(m * 0.165f, (screenH * 0.94f - heroH - footerH - sections * secH) / std::max(1, n) - m * 0.028f);
+    rowH = std::clamp(rowH, m * 0.085f, m * 0.170f);
+    const float gap = m * 0.028f;
+
     float ph;
-    if (current_.id == MenuId::Inventory || current_.id == MenuId::Crafting) {
-        // Izgara panelin DIŞINA taşmamalı: yuva boyu hem genişliğe hem
-        // kalan yüksekliğe göre sınırlanıyor (telefonda 4 satır kesiliyordu).
-        const float availW = pw - 56.f;
+    if (grid) {
+        const float availW = pw - m * 0.13f;
         float slot = std::min((availW - 8.f * 8.f) / 9.f, screenH * 0.15f);
-        const float maxPh = screenH * 0.92f;
-        const float slotByH = (maxPh - 108.f - 40.f) / 4.f - 8.f;
-        slot = std::max(20.f, std::min(slot, slotByH));
-        ph = 108.f + 4.f * (slot + 8.f) + 40.f;
+        slot = std::max(20.f, std::min(slot, (screenH * 0.92f - m * 0.34f) / 4.f - 8.f));
+        ph = heroH + 4.f * (slot + 8.f) + m * 0.10f;
     } else {
-        ph = 140.f + n * (rowH + 12.f) + 40.f;
+        ph = heroH + n * (rowH + gap) + sections * secH + footerH + m * 0.035f;
     }
-    ph = std::min(ph, screenH * 0.92f);
-    float px = (screenW - pw) * 0.5f;
-    float py = (screenH - ph) * 0.5f;
+    ph = std::min(ph, screenH * 0.96f);
 
-    // panel gölgesi + cam yüzey
-    out.shadow(Rect{px, py, pw, ph}, m * 0.030f, Color{0, 0, 0, 0.85f}, rad);
+    const float px = (screenW - pw) * 0.5f;
+    const float py = (screenH - ph) * 0.5f;
+
+    // ---- CAM PANEL ----
+    out.shadow(Rect{px, py, pw, ph}, m * 0.040f, Color{0, 0, 0, 0.90f}, rad);
     out.gradient(Rect{px, py, pw, ph}, kPanelTop, kPanelBot, rad);
-    // üst kenarda ince ışık çizgisi (cam hissi)
+    // üst kenar ışığı + iç çerçeve
     out.gradient(Rect{px + rad, py, pw - rad * 2.f, 2.f},
-                 Color{1, 1, 1, 0.16f}, Color{1, 1, 1, 0.0f});
+                 Color{1, 1, 1, 0.20f}, Color{1, 1, 1, 0.0f});
+    out.roundRect(Rect{px, py, pw, 1.f}, Color{1, 1, 1, 0.10f}, 0.5f);
 
-    // başlık: büyük, harf aralıklı, ortalanmış
-    out.text(current_.title, px + pw * 0.5f, py + 34.f, 1.7f, kWhite, 1);
-    // başlık altı vurgu çizgisi (kısa, ortada)
-    float ulW = std::min(pw * 0.16f, 120.f);
-    out.gradient(Rect{px + (pw - ulW) * 0.5f, py + 34.f + 46.f, ulW, 3.f},
-                 kAccent, Color{kAccent.r, kAccent.g, kAccent.b, 0.15f}, 1.5f);
-
-    for (int i = 0; i < n; ++i) {
-        float ry = py + 120.f + i * (rowH + 12.f);
-        Rect r{px + 24.f, ry, pw - 48.f, rowH};
-        bool sel = (i == current_.selected);
-
-        Color top = kCard, bot = Color{kCard.r * 0.78f, kCard.g * 0.78f, kCard.b * 0.82f, kCard.a};
-        if (sel) {
-            top = kCardHi;
-            bot = Color{kCard.r * 0.95f, kCard.g * 0.95f, kCard.b * 0.95f, kCard.a};
+    // ---- BAŞLIK ALANI (yükseklik önceden hesaplanır, taşma olmaz) ----
+    const float cx = px + pw * 0.5f;
+    float headerH;
+    if (hero) {
+        const float titleScale = m * 0.0046f;
+        const float titleH = 14.f * titleScale;
+        const float titleY = py + m * 0.055f;
+        out.text(current_.title, cx, titleY, titleScale, kWhite, 1);
+        const float uw = std::min(pw * 0.30f, m * 0.46f);
+        const float uy = titleY + titleH + m * 0.012f;
+        out.gradient(Rect{cx - uw * 0.5f, uy, uw, 3.f},
+                     kAccent, Color{kAccent.r, kAccent.g, kAccent.b, 0.04f}, 1.5f);
+        const float subScale = m * 0.0030f;
+        float subY = uy + m * 0.014f;
+        if (!current_.subtitle.empty()) {
+            out.text(current_.subtitle, cx, subY, subScale,
+                     Color{0.60f, 0.70f, 0.83f, 1.f}, 1);
+            subY += 14.f * subScale;
         }
-        if (!current_.items[i].enabled) {
-            top = Color{0.12f, 0.13f, 0.16f, 0.55f};
-            bot = Color{0.10f, 0.11f, 0.14f, 0.55f};
+        headerH = (subY + m * 0.022f) - py;
+    } else {
+        const float titleScale = m * 0.0040f;
+        const float titleH = 14.f * titleScale;
+        const float titleY = py + m * 0.048f;
+        out.text(current_.title, cx, titleY, titleScale, kWhite, 1);
+        const float uw = std::min(pw * 0.22f, m * 0.34f);
+        const float uy = titleY + titleH + m * 0.010f;
+        out.gradient(Rect{cx - uw * 0.5f, uy, uw, 2.5f},
+                     kAccent, Color{kAccent.r, kAccent.g, kAccent.b, 0.04f}, 1.25f);
+        const float subScale = m * 0.0028f;
+        float subY = uy + m * 0.012f;
+        if (!current_.subtitle.empty()) {
+            out.text(current_.subtitle, cx, subY, subScale,
+                     Color{0.58f, 0.68f, 0.80f, 1.f}, 1);
+            subY += 14.f * subScale;
         }
-
-        // kart gölgesi + yuvarlatılmış gradyan yüzey
-        out.shadow(r, m * 0.012f, Color{0, 0, 0, 0.55f}, cardRad);
-        out.gradient(r, top, bot, cardRad);
-        // seçili kartta sol tarafta canlı vurgu hapı
-        if (sel) {
-            float hh = r.h * 0.44f;
-            out.gradient(Rect{r.x + 6.f, r.y + (r.h - hh) * 0.5f, 5.f, hh},
-                         kAccent, kAccentDim, 2.5f);
-        }
-        // ince iç kenar (cam çerçeve)
-        out.roundRect(Rect{r.x, r.y, r.w, 1.5f}, kStroke, 0.75f);
-
-        // Dikey hizalama: metin bloğu kartın TAM ortasına oturur.
-        // Gerçek glif yüksekliği = 14 * scale (cihazdaki metrikle aynı);
-        // önceden 22 varsayıldığı için etiket 8 px yukarı kayıyordu.
-        const bool hasSub = !current_.items[i].sublabel.empty();
-        const float labelScale = 1.15f;
-        const float labelH = 14.f * labelScale;
-        const float subScale = 0.80f;
-        const float subH = 14.f * subScale;
-        const float gap = hasSub ? 8.f : 0.f;
-        const float blockH = labelH + gap + (hasSub ? subH : 0.f);
-        const float ty = r.y + (r.h - blockH) * 0.5f;
-        out.text(current_.items[i].label, r.x + 26.f, ty, labelScale,
-                 current_.items[i].enabled ? kWhite : Color{0.45f, 0.48f, 0.54f, 1});
-        if (hasSub)
-            out.text(current_.items[i].sublabel, r.x + 26.f, ty + labelH + gap,
-                     subScale, kTextDim);
-        itemRects_.push_back(r);
+        headerH = (subY + m * 0.020f) - py;
     }
-    // ---- envanter / üretim ızgarası ----
+
+    // ---- KARTLAR ----
+    float y = py + heroH;
+    for (int i = 0; i < n; ++i) {
+        const MenuItem& item = current_.items[i];
+
+        // bölüm başlığı (büyük harf, harf aralıklı, soluk)
+        if (!item.section.empty()) {
+            out.text(item.section, px + m * 0.065f, y + secH * 0.30f,
+                     m * 0.0028f, Color{0.46f, 0.56f, 0.68f, 1.f});
+            out.roundRect(Rect{px + m * 0.065f, y + secH * 0.72f,
+                               pw - m * 0.13f, 1.f},
+                          Color{1.f, 1.f, 1.f, 0.06f}, 0.5f);
+            y += secH;
+        }
+
+        Rect r{px + m * 0.060f, y, pw - m * 0.12f, rowH};
+        const bool sel = (i == current_.selected);
+
+        // kart yüzeyi: seçili kart daha parlak + sol vurgu
+        Color top = kCard, bot = Color{kCard.r * 0.74f, kCard.g * 0.76f, kCard.b * 0.82f, kCard.a};
+        if (sel) { top = kCardHi; bot = Color{kCard.r * 1.02f, kCard.g * 1.02f, kCard.b * 1.02f, kCard.a}; }
+        if (!item.enabled) { top = Color{0.11f, 0.12f, 0.15f, 0.62f}; bot = Color{0.09f, 0.10f, 0.13f, 0.62f}; }
+
+        out.shadow(r, m * 0.014f, Color{0, 0, 0, sel ? 0.62f : 0.42f}, cardRad);
+        out.gradient(r, top, bot, cardRad);
+        out.roundRect(Rect{r.x, r.y, r.w, 1.f}, Color{1.f, 1.f, 1.f, sel ? 0.16f : 0.07f}, 0.5f);
+        if (sel) {
+            // sol vurgu hapı (canlı yeşil → soluk)
+            const float hh = r.h * 0.46f;
+            out.gradient(Rect{r.x + 5.f, r.y + (r.h - hh) * 0.5f, 4.5f, hh},
+                         Color{0.55f, 0.98f, 0.72f, 1.f}, kAccentDim, 2.2f);
+        }
+
+        // ---- İKON: sol yuvarlak rozet ----
+        const float iconR = r.h * 0.30f;
+        const float icx = r.x + r.h * 0.50f;
+        const float icy = r.y + r.h * 0.5f;
+        Color iconBg = item.enabled ? Color{0.20f, 0.26f, 0.34f, 0.95f}
+                                    : Color{0.16f, 0.17f, 0.20f, 0.75f};
+        if (sel) iconBg = Color{0.24f, 0.40f, 0.34f, 0.98f};
+        out.circle(icx, icy, iconR, iconBg, 0.f);
+        out.circle(icx, icy, iconR, Color{1.f, 1.f, 1.f, sel ? 0.26f : 0.12f}, 1.2f);
+        std::string icon = item.icon;
+        if (icon.empty()) icon = item.label.empty() ? "?" : item.label.substr(0, 1);
+        const float iconScale = std::max(0.34f, iconR * 0.038f);
+        const float iconH = 14.f * iconScale;
+        out.text(icon, icx, icy - iconH * 0.5f, iconScale,
+                 sel ? kWhite : Color{0.84f, 0.90f, 0.96f, 1.f}, 1);
+
+        // ---- METİN BLOĞU: satır yüksekliğine göre ölçeklenir (taşma yok) ----
+        const bool hasSub = !item.sublabel.empty();
+        const float labelScale = r.h * 0.0215f;
+        const float subScale = r.h * 0.0150f;
+        const float labelH = 14.f * labelScale;
+        const float subH = 14.f * subScale;
+        const float innerGap = hasSub ? r.h * 0.055f : 0.f;
+        const float blockH = labelH + innerGap + (hasSub ? subH : 0.f);
+        const float textX = r.x + r.h * 0.92f;
+        const float ty = r.y + (r.h - blockH) * 0.5f;
+        out.text(item.label, textX, ty, labelScale,
+                 item.enabled ? kWhite : Color{0.46f, 0.50f, 0.56f, 1.f});
+        if (hasSub)
+            out.text(item.sublabel, textX, ty + labelH + innerGap, subScale, kTextDim);
+
+        // ---- SAĞ TARAF: canlı nokta + badge ----
+        float rightX = r.x + r.w - m * 0.030f;
+        if (!item.badge.empty()) {
+            const float bScale = r.h * 0.0125f;
+            const float bH = r.h * 0.34f;
+            // Metin genişliği: karakter başına ~12*bScale (advance+boşluk).
+            // Önceden 6*bScale kullanılıyordu → yazı hapın dışına taşıyordu.
+            float bW = 12.2f * bScale * static_cast<float>(item.badge.size()) + r.h * 0.20f;
+            bW = std::max(bW, r.h * 0.50f);
+            Rect br{rightX - bW, r.y + (r.h - bH) * 0.5f, bW, bH};
+            Color bTop = item.live ? Color{0.26f, 0.86f, 0.55f, 0.96f}
+                                   : Color{0.24f, 0.28f, 0.36f, 0.92f};
+            Color bBot = item.live ? Color{0.14f, 0.62f, 0.40f, 0.96f}
+                                   : Color{0.16f, 0.19f, 0.25f, 0.92f};
+            out.gradient(br, bTop, bBot, bH * 0.5f);
+            out.text(item.badge, br.x + br.w * 0.5f,
+                     br.y + (br.h - 14.f * bScale) * 0.5f, bScale,
+                     item.live ? Color{0.03f, 0.12f, 0.07f, 1.f}
+                               : Color{0.86f, 0.91f, 0.97f, 1.f}, 1);
+            rightX = br.x - r.h * 0.26f;
+        }
+        if (item.live) {
+            // canlı sunucu: yeşil nokta + hafif hâle
+            out.circle(rightX, r.y + r.h * 0.5f, r.h * 0.15f,
+                       Color{0.35f, 0.95f, 0.60f, 0.16f}, 0.f);
+            out.circle(rightX, r.y + r.h * 0.5f, r.h * 0.062f,
+                       Color{0.45f, 0.98f, 0.66f, 1.f}, 0.f);
+        }
+
+        itemRects_.push_back(r);
+        y += rowH + gap;
+    }
+
+    // ---- ALT YAZI ----
+    if (!current_.footer.empty()) {
+        out.text(current_.footer, cx, y + m * 0.016f, m * 0.0025f,
+                 Color{0.40f, 0.48f, 0.58f, 1.f}, 1);
+    }
+
+    // ---- ENVANTER / ÜRETİM IZGARASI ----
     if (current_.id == MenuId::Inventory && current_.inv) {
         const Inventory& inv = *current_.inv;
         int cols = 9;
-        float availW = pw - 56.f;
+        const float availW = pw - m * 0.12f;
         float gs = std::min((availW - 8.f * 8.f) / 9.f, screenH * 0.15f);
-        gs = std::max(20.f, std::min(gs, (screenH * 0.92f - 148.f) / 4.f - 8.f));
+        gs = std::max(20.f, std::min(gs, (screenH * 0.92f - m * 0.34f) / 4.f - 8.f));
         float gw = cols * (gs + 8.f) - 8.f;
         float gx = px + (pw - gw) * 0.5f;
-        float gy = py + 108.f;
+        float gy = py + heroH;
         for (int i = 0; i < Inventory::TOTAL; ++i) {
             int c = i % cols;
             int row = (i < Inventory::HOTBAR) ? 3 : ((i - Inventory::HOTBAR) / cols);
             float x = gx + c * (gs + 8.f);
-            float y = gy + row * (gs + 8.f);
+            float yy = gy + row * (gs + 8.f);
             const ItemStack& it = inv.at(i);
             bool cursor = (i == current_.cursorSlot);
             const float slotR = gs * 0.22f;
             if (cursor) {
-                out.roundRect(Rect{x - 2.5f, y - 2.5f, gs + 5.f, gs + 5.f},
+                out.roundRect(Rect{x - 2.5f, yy - 2.5f, gs + 5.f, gs + 5.f},
                               Color{0.32f, 0.86f, 0.58f, 0.22f}, slotR + 2.5f);
-                out.gradient(Rect{x - 1.5f, y - 1.5f, gs + 3.f, gs + 3.f},
+                out.gradient(Rect{x - 1.5f, yy - 1.5f, gs + 3.f, gs + 3.f},
                              Color{0.96f, 0.99f, 1.f, 0.92f},
                              Color{0.42f, 0.84f, 0.64f, 0.92f}, slotR + 1.5f);
             }
-            out.roundRect(Rect{x, y, gs, gs},
+            out.roundRect(Rect{x, yy, gs, gs},
                           cursor ? Color{0.24f, 0.34f, 0.31f, 0.92f}
                                  : Color{0.15f, 0.16f, 0.20f, 0.90f}, slotR);
-            out.roundRect(Rect{x + 1.f, y + 1.f, gs - 2.f, 1.f},
+            out.roundRect(Rect{x + 1.f, yy + 1.f, gs - 2.f, 1.f},
                           Color{1.f, 1.f, 1.f, cursor ? 0.30f : 0.09f}, 0.5f);
             if (!it.empty()) {
-                out.texturedRect(Rect{x + gs * 0.12f, y + gs * 0.12f,
+                out.texturedRect(Rect{x + gs * 0.12f, yy + gs * 0.12f,
                                       gs * 0.76f, gs * 0.76f},
                                  static_cast<uint16_t>(it.itemId * 3));
                 if (it.count > 1)
                     out.text(std::to_string(it.count), x + gs * 0.94f,
-                             y + gs * 0.66f, 0.45f, kWhite, 2);
+                             yy + gs * 0.66f, 0.45f, kWhite, 2);
             }
         }
     }
     if (current_.id == MenuId::Crafting) {
         float cs = std::min(84.f, screenH * 0.15f);
-        float gx = px + 40.f;
-        float gy = py + 108.f;
-        out.text("uretim izgarasi", gx, py + 82.f, 0.8f, Color{0.7f, 0.75f, 0.8f, 1});
-        for (int r = 0; r < 3; ++r)
+        float gx = px + m * 0.08f;
+        float gy = py + heroH;
+        out.text("uretim izgarasi", gx, gy - m * 0.045f, m * 0.0030f,
+                 Color{0.62f, 0.72f, 0.84f, 1});
+        for (int r = 0; r < 3; ++r) {
             for (int c = 0; c < 3; ++c) {
                 Rect cr{gx + c * (cs + 6.f), gy + r * (cs + 6.f), cs, cs};
                 out.roundRect(Rect{cr.x - 2.f, cr.y - 2.f, cr.w + 4.f, cr.h + 4.f},
@@ -704,13 +845,13 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
                 out.roundRect(Rect{cr.x + 1.f, cr.y + 1.f, cr.w - 2.f, 1.f},
                               Color{1.f, 1.f, 1.f, 0.09f}, 0.5f);
             }
+        }
         float ox = gx + 3 * (cs + 6.f) + 12.f;
         out.text("->", ox, gy + cs * 1.2f, 1.0f, kAccent);
         out.roundRect(Rect{ox + 62.f, gy + cs * 0.85f, cs, cs},
                       Color{0.24f, 0.34f, 0.29f, 0.95f}, cs * 0.22f);
     }
 
-    // dokunmatik IPC bu rect listesini kullanır
     (void)modeRects_;
 }
 

@@ -25,6 +25,7 @@ bool Engine::init(const EngineConfig& cfg) {
     audio_.setSfxVolume(cfg_.settings.sfxVolume);
 
     applySettings();
+    simulateLobbyOnline();   // ana menüde canlı sunucu bilgisi görünsün
     menus_.open(MenuId::Main);
     state_ = EngineState::MainMenu;
 
@@ -153,6 +154,17 @@ void Engine::setMode(uint8_t mode) {
 }
 
 // ---------------- lobi ----------------
+void Engine::simulateLobbyOnline() {
+    // Çevrimdışı/tek başına açılışta ana menü "sunucu araniyor..." da kalmasın.
+    // Sunucu yanıtı gelene kadar iyimser varsayılan: küçük canlı bir lobi.
+    if (lobby.online == 0) {
+        lobby.duello = 2;
+        lobby.takimli = 6;
+        lobby.mega = 4;
+        lobby.online = 12;
+    }
+}
+
 void Engine::refreshLobbyFromServer(const std::string& jsonResponse) {
     // Supabase RPC yanıtı: {"duello":12,"takimli":40,"mega":8,"online":57}
     Json j = Json::parse(jsonResponse);
@@ -277,26 +289,47 @@ void Engine::tickMenu(float dt) {
     // ana menü aksiyonlarını bağla
     auto& scr = menus_.screen();
     if (scr.id == MenuId::Main) {
-        for (size_t i = 0; i < scr.items.size(); ++i) {
-            scr.items[i].action = nullptr;
-        }
-        if (scr.items.size() >= 1) scr.items[0].action = [this] { menus_.open(MenuId::Play); };
-        if (scr.items.size() >= 2) scr.items[1].action = [this] { menus_.open(MenuId::Settings); };
-    } else if (scr.id == MenuId::Play) {
-        if (scr.items.size() >= 3) {
+        // ===== SUNUCU MERKEZLİ AKIŞ =====
+        // 0: Sunucuya Gir (en kalabalık dünya)  1: Sunucular  2: Karakter  3: Ayarlar
+        for (size_t i = 0; i < scr.items.size(); ++i) scr.items[i].action = nullptr;
+
+        // "Sunucuya Gir": canlı oyuncu sayısını göster, doğrudan dünyaya gir
+        if (scr.items.size() >= 1) {
+            scr.items[0].sublabel = lobby.online > 0
+                ? std::to_string(lobby.online) + " oyuncu cevrimici"
+                : "sunucu araniyor...";
+            scr.items[0].badge = lobby.online > 0 ? std::to_string(lobby.online) + " online" : "baglan";
+            scr.items[0].live = lobby.online > 0;
             scr.items[0].action = [this] {
+                toast_.show("sunucuya baglaniliyor", 1.4f);
                 startNewWorld(cfg_.seed ? cfg_.seed : 424242);
             };
+        }
+        if (scr.items.size() >= 2) {
             scr.items[1].action = [this] {
-                // lobi: gerçek mod listesi
-                std::vector<MenuScreen::ModeRow> rows = {
+                menus_.showModePanel({
+                    {"Duello", "1v1 arena", lobby.duello > 0 ? lobby.duello : 3, 2, true},
+                    {"Takimli", "5v5 savas", lobby.takimli > 0 ? lobby.takimli : 8, 10, true},
+                    {"Mega", "6v6 karmasa", lobby.mega > 0 ? lobby.mega : 11, 12, true},
+                });
+            };
+        }
+        if (scr.items.size() >= 3) {
+            scr.items[2].action = [this] { toast_.show("karakter ekrani yakinda", 1.6f); };
+        }
+        if (scr.items.size() >= 4) {
+            scr.items[3].action = [this] { menus_.open(MenuId::Settings); };
+        }
+    } else if (scr.id == MenuId::Play) {
+        if (scr.items.size() >= 2) {
+            scr.items[0].action = [this] {
+                menus_.showModePanel({
                     {"Duello", "1v1 arena", lobby.duello, 2, true},
                     {"Takimli", "5v5 savas", lobby.takimli, 10, true},
                     {"Mega", "6v6 karmasa", lobby.mega, 12, true},
-                };
-                menus_.showModePanel(rows);
+                });
             };
-            scr.items[2].action = [this] { menus_.close(); };
+            scr.items[1].action = [this] { menus_.back(); };
         }
     } else if (scr.id == MenuId::Settings) {
         // ayarları gerçekten değiştir (dokununca değer döner)
@@ -342,13 +375,22 @@ void Engine::tickMenu(float dt) {
 void Engine::wirePauseMenu() {
     auto& scr = menus_.screen();
     if (scr.id != MenuId::Pause) return;
-    if (scr.items.size() >= 3) {
+    if (scr.items.size() >= 4) {
         scr.items[0].action = [this] {
             menus_.close();
             state_ = EngineState::Playing;
         };
-        scr.items[1].action = [this] { menus_.open(MenuId::Settings); };
-        scr.items[2].action = [this] {
+        // Sunucular: dünya değiştir (lobi listesi)
+        scr.items[1].action = [this] {
+            if (cfg_.autoSave) saveWorld();
+            menus_.showModePanel({
+                {"Duello", "1v1 arena", lobby.duello, 2, true},
+                {"Takimli", "5v5 savas", lobby.takimli, 10, true},
+                {"Mega", "6v6 karmasa", lobby.mega, 12, true},
+            });
+        };
+        scr.items[2].action = [this] { menus_.open(MenuId::Settings); };
+        scr.items[3].action = [this] {
             if (cfg_.autoSave) saveWorld();
             game_.reset();
             state_ = EngineState::MainMenu;

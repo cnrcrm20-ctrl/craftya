@@ -1473,10 +1473,8 @@ static int test_mobile_flow() {
         return false;
     };
 
-    check(tapIndex(0), "ana menude 'Oyna' ogesi bulundu");
-    check(e.menus().current() == MenuId::Play, "'Oyna' dokunusu isledi");
-    check(tapIndex(0), "'Tek Oyunculu' ogesi bulundu");
-    check(e.state() == EngineState::Playing, "'Tek Oyunculu' oyunu baslatti (COKME YOK)");
+    check(tapIndex(0), "ana menude 'Sunucuya Gir' ogesi bulundu");
+    check(e.state() == EngineState::Playing, "'Sunucuya Gir' oyunu baslatti (COKME YOK)");
     check(!e.menus().isOpen(), "dunya baslayinca menu tamamen kapandi");
 
     for (int i = 0; i < 60; ++i) e.update(1.f / 60.f);

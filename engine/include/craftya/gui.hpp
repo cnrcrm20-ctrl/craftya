@@ -160,12 +160,24 @@ struct MenuItem {
     std::string sublabel;
     bool enabled = true;
     std::function<void()> action;
+    // ---- modern liste görünümü ----
+    // badge: sağda hap içinde sayı/durum ("12/30", "VIP", "acik")
+    std::string badge;
+    bool live = false;        // canlı sunucu → yeşil nabız noktası
+    // section: bu öğeden ÖNCE bölüm başlığı çizilir ("" = yok)
+    std::string section;
+    // icon: sol yuvarlak ikonun içindeki harf ("" = etiketin ilk harfi)
+    std::string icon;
 };
 
 class MenuScreen {
 public:
     MenuId id = MenuId::None;
     std::string title;
+    // hero: ana ekranda büyük wordmark gösterilir (CRAFTYA)
+    bool hero = false;
+    std::string subtitle;     // başlığın altındaki tek satır
+    std::string footer;       // panelin altındaki küçük yazı (sürüm vb.)
     std::vector<MenuItem> items;
     int selected = 0;
 
@@ -211,6 +223,8 @@ public:
 
     // dokunmatik
     void onTap(float x, float y, float screenW, float screenH);
+    // testler ve otomasyon için: son build()'de üretilen dokunma alanları
+    const std::vector<Rect>& itemRects() const { return itemRects_; }
     void onKey(int keyCode);
 
 private:
