@@ -174,6 +174,11 @@ public:
     void open(MenuId id);
     void close();
     bool isOpen() const { return current_.id != MenuId::None; }
+    // TÜM menüleri kapatır (oyuna girerken gerekir).
+    // close() yalnızca bir adım geri gider: dünya başlatıldığında menü
+    // açık kalıyor, tüm dokunuşlar menüye gidiyor ve oyuncu HAREKET
+    // EDEMİYORDU. closeAll() yığını tamamen boşaltır.
+    void closeAll() { stack_.clear(); current_ = MenuScreen{}; }
     MenuId current() const { return current_.id; }
 
     MenuScreen& screen() { return current_; }

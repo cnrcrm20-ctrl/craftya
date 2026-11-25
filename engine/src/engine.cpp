@@ -113,7 +113,7 @@ bool Engine::startNewWorld(uint32_t seed) {
     sessionSeconds_ = 0.f;
     autoSaveTimer_ = 0.f;
     state_ = EngineState::Playing;
-    menus_.close();
+    menus_.closeAll();      // menü tamamen kapanmalı, yoksa HUD girdisi çalışmaz
     toast_.show("Dunya hazir — " + std::to_string(seed_));
     return true;
 }
@@ -131,7 +131,7 @@ bool Engine::loadWorld() {
     inv_ = L.inv;
     seed_ = L.seed;
     state_ = EngineState::Playing;
-    menus_.close();
+    menus_.closeAll();  // yüklemede de menü tamamen kapansın
     toast_.show("Kayit yuklendi — " + L.name);
     return true;
 }
@@ -202,6 +202,9 @@ void Engine::onTouchDown(int pointerId, float x, float y) {
         return;
     }
     if (state_ == EngineState::MainMenu || state_ == EngineState::Paused) {
+        // Ana menü/duraklatma: dokunuşu gerçekten menüye ilet.
+        // (Önceden onTap çağrılıyordu ama itemRects_ her kare
+        //  yeniden hesaplandığı için dokunma hiçbir zaman eşleşmiyordu.)
         menus_.onTap(x, y, static_cast<float>(width_), static_cast<float>(height_));
         return;
     }
@@ -213,7 +216,10 @@ void Engine::onTouchMove(int pointerId, float x, float y) {
 }
 
 void Engine::onTouchUp(int pointerId) {
-    if (state_ == EngineState::Playing) hud_.onTouchUp(pointerId);
+    // Menüde de takılı kalan parmak durumlarını temizle.
+    // Eskiden yalnızca Playing'de çağrılıyordu; menüde basılı kalan
+    // pointer'lar bir sonraki dokunuşu yutuyordu.
+    hud_.onTouchUp(pointerId);
 }
 
 void Engine::onKey(int keyCode, bool down) {
@@ -229,11 +235,19 @@ void Engine::onKey(int keyCode, bool down) {
 }
 
 void Engine::onBackPressed() {
-    if (menus_.isOpen()) { menus_.back(); return; }
+    // Sıra önemli:
+    //  1) Oyun içinde AÇIK bir menü varsa (envanter/mod paneli/ayarlar)
+    //     önce onu kapat.
+    //  2) Menü yoksa geri tuşu oyunu DURAKLATIR.
+    // (Eskiden oyun içinde back() çağrılıp menü kapatılıyor, oyun
+    //  Playing'de kalıyor ve oyuncu arayüzsüz kalıyordu.)
     if (state_ == EngineState::Playing) {
+        if (menus_.isOpen()) { menus_.back(); return; }
         state_ = EngineState::Paused;
         menus_.open(MenuId::Pause);
+        return;
     }
+    if (menus_.isOpen()) { menus_.back(); return; }
 }
 
 // ---------------- kare ----------------

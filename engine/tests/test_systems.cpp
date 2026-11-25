@@ -1392,6 +1392,71 @@ static int test_mobile_input() {
     return 0;  // check() global sayaclari kendisi gunceller
 }
 
+// ---------------------------------------------------------------- mobil akış
+// Telefonda "hiçbir şey çalışmıyor" şikayetinin kök nedenleri:
+//  * onTap aksiyondan sonra current_.items[i] okuyordu -> SEGFAULT
+//  * startNewWorld menüyü kapatmıyordu -> tüm dokunuşlar menüye gidiyordu
+//  * onBackPressed oyun içinde menüyü kapatıyordu (duraklatmıyordu)
+//  * onTouchUp yalnızca Playing'de çağrılıyordu
+static int test_mobile_flow() {
+    group("mobil akis (menu -> oyun)");
+
+    Engine e;
+    EngineConfig cfg;
+    cfg.seed = 777u;
+    e.init(cfg);
+    e.onSurfaceCreated(854, 480, 2.f);
+    e.update(1.f / 60.f);
+    check(e.state() == EngineState::MainMenu, "acilista ana menu");
+
+    // gerçek dokunuşla menüden geç (çökme regresyonu)
+    auto tapIndex = [&](int want) -> bool {
+        DrawList dl;
+        e.render(&dl);
+        int k = 0;
+        for (const auto& c : dl.items()) {
+            if (c.cmd != DrawCmd::Rect) continue;
+            if (c.rect.w > 300.f && c.rect.h > 30.f && c.rect.h < 130.f) {
+                if (k == want) {
+                    e.onTouchDown(1, c.rect.x + c.rect.w * 0.5f, c.rect.y + c.rect.h * 0.5f);
+                    e.onTouchUp(1);
+                    e.update(1.f / 60.f);
+                    return true;
+                }
+                ++k;
+            }
+        }
+        return false;
+    };
+
+    check(tapIndex(0), "ana menude 'Oyna' ogesi bulundu");
+    check(e.menus().current() == MenuId::Play, "'Oyna' dokunusu isledi");
+    check(tapIndex(0), "'Tek Oyunculu' ogesi bulundu");
+    check(e.state() == EngineState::Playing, "'Tek Oyunculu' oyunu baslatti (COKME YOK)");
+    check(!e.menus().isOpen(), "dunya baslayinca menu tamamen kapandi");
+
+    for (int i = 0; i < 60; ++i) e.update(1.f / 60.f);
+    check(e.game().stats().loadedChunks > 20, "dunya chunk'lari yuklendi");
+
+    // joystick gerçekten hareket ettiriyor mu
+    Vec3f a = e.game().player().pos;
+    e.hud().onTouchDown(2, 74.f, 367.f);
+    e.hud().onTouchMove(2, 74.f, 320.f);
+    for (int i = 0; i < 90; ++i) e.update(1.f / 60.f);
+    e.hud().onTouchUp(2);
+    Vec3f b = e.game().player().pos;
+    float moved = std::sqrt((b.x-a.x)*(b.x-a.x) + (b.z-a.z)*(b.z-a.z));
+    check(moved > 2.f, "joystick oyuncuyu hareket ettiriyor");
+
+    // geri tuşu duraklatmalı
+    e.onBackPressed();
+    e.update(1.f / 60.f);
+    check(e.state() == EngineState::Paused, "geri tusu oyunu duraklatiyor");
+    check(e.menus().current() == MenuId::Pause, "duraklatma menusu acildi");
+
+    return 0;
+}
+
 int main() {
     std::printf("=== Craftya genisletilmis sistem testleri ===\n");
     testJson();
@@ -1415,6 +1480,8 @@ int main() {
     g_pass += 6;
     g_fail += test_mobile_input();
     g_pass += 12;
+    g_fail += test_mobile_flow();
+    g_pass += 11;
 
     std::printf("\n----------------------------------------\n");
     std::printf("GECEN: %d   BASARISIZ: %d\n", g_pass, g_fail);

@@ -171,6 +171,15 @@ void Hud::onTouchDown(int pointerId, float x, float y) {
         bool inLeftBottom = (x < w_ * 0.45f) && (y > h_ * 0.45f) && (y < hotbarRect_.y - 2.f);
         if (std::sqrt(dx*dx + dy*dy) < joyRadius_ * 1.9f || inLeftBottom) {
             joyPointer_ = pointerId;
+            // MOBİL DAVRANIŞ: taban SABİT kalır (görsel joystick yerinde durur),
+            // sadece parmağın merkeze göre sapması yönü belirler. Eskiden taban
+            // parmağın altına taşınıyordu; bu durumda mutlak konuma göre yapılan
+            // sürüklemede eksen 0 çıkıyor ve oyuncu hareket etmiyordu.
+            if (inLeftBottom && !(std::sqrt(dx*dx + dy*dy) < joyRadius_ * 1.9f)) {
+                // ekranın sol altına basıldı: tabanı parmağa getir (dinamik joystick)
+                joyCx_ = x; joyCy_ = y;
+                dx = dy = 0.f;
+            }
             joyKnobX_ = x; joyKnobY_ = y;
             float len = std::sqrt(dx*dx + dy*dy);
             float norm = len > joyRadius_ ? joyRadius_ / len : 1.f;
@@ -522,15 +531,27 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
 void MenuSystem::onTap(float x, float y, float screenW, float screenH) {
     (void)screenW; (void)screenH;
     for (size_t i = 0; i < itemRects_.size(); ++i) {
-        if (itemRects_[i].contains(x, y)) {
-            current_.selected = static_cast<int>(i);
-            activate();
-            if (!current_.items[i].action) {
-                // varsayılan davranış: geri = kapat
-                if (current_.items[i].label == "Geri") close();
-            }
-            return;
+        if (!itemRects_[i].contains(x, y)) continue;
+
+        current_.selected = static_cast<int>(i);
+        if (i >= current_.items.size()) return;
+
+        // ÖNEMLİ: aksiyon menüyü kapatıp current_ vektörünü boşaltabilir.
+        // Eskiden aksiyondan SONRA current_.items[i] okunuyordu; bu,
+        // "Tek Oyunculu"ya dokununca current_.items boşaldığı için
+        // sınır dışı erişim → SEGFAULT (telefonda oyuna girerken çökme)
+        // demekti. Artık gereken her şey aksiyondan ÖNCE kopyalanıyor.
+        const bool hasAction = static_cast<bool>(current_.items[i].action);
+        const std::string label = current_.items[i].label;
+
+        if (hasAction) {
+            // kopyayı çağır: lambda menüyü kapatmış olsa da güvenli
+            auto act = current_.items[i].action;
+            act();
+        } else if (label == "Geri") {
+            close();
         }
+        return;
     }
 }
 
