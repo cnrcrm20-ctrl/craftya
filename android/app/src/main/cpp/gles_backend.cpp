@@ -310,7 +310,7 @@ void GLESBackend::drawUiQuadStyled(float x, float y, float w, float h,
                                    float r, float g, float b, float a,
                                    float corner,
                                    const float* gradTop, const float* gradBottom,
-                                   int atlasTile) {
+                                   int atlasTile, float ringInner) {
     if (uiProgram_ == 0) return;
     float u0 = 0.f, v0 = 0.f, u1 = 1.f, v1 = 1.f;
     if (atlasTile >= 0) Atlas::tileUV(atlasTile, u0, v0, u1, v1);
@@ -333,6 +333,7 @@ void GLESBackend::drawUiQuadStyled(float x, float y, float w, float h,
                 x + w * 0.5f, y + h * 0.5f);
     glUniform2f(glGetUniformLocation(uiProgram_, "uHalfSize"), w * 0.5f, h * 0.5f);
     glUniform1f(glGetUniformLocation(uiProgram_, "uCorner"), corner);
+    glUniform1f(glGetUniformLocation(uiProgram_, "uRingInner"), ringInner);
     if (atlasTile >= 0) {
         glBindTexture(GL_TEXTURE_2D, atlasTex_);
         glUniform1i(glGetUniformLocation(uiProgram_, "uUseTex"), 1);

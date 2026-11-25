@@ -262,20 +262,16 @@ void UiRenderer::render(GLESBackend& gl, const DrawList& list, int screenW, int 
                 break;
             }
             case DrawCmd::Circle: {
-                // gerçek disk: yuvarlatılmış kare hilesiyle (yarıçap = yarı boy)
-                // Glif başına çizim yerine tek dörtgen — mobilde çok daha ucuz.
+                // Gerçek disk / halka: SDF yuvarlatılmış kare hilesiyle.
+                // Halka için uRingInner = r - kalınlık veriliyor; önceden
+                // iç boşluk delinmediği için çerçeveler dolu disk çıkıyordu.
                 float r = it.radius > 0.f ? it.radius : it.rect.w * 0.5f;
-                if (it.thickness > 0.f && it.thickness < r) {
-                    gl.drawUiQuadStyled(it.rect.x, it.rect.y, it.rect.w, it.rect.h,
-                                        it.color.r, it.color.g, it.color.b, it.color.a,
-                                        r, nullptr, nullptr);
-                    // iç boşluk: arka planı "delmek" yerine iç disk çizilmez;
-                    // halka görünümü için dış disk + iç saydam yeterli
-                } else {
-                    gl.drawUiQuadStyled(it.rect.x, it.rect.y, it.rect.w, it.rect.h,
-                                        it.color.r, it.color.g, it.color.b, it.color.a,
-                                        r, nullptr, nullptr);
-                }
+                float inner = 0.f;
+                if (it.thickness > 0.f && it.thickness < r)
+                    inner = r - it.thickness;
+                gl.drawUiQuadStyled(it.rect.x, it.rect.y, it.rect.w, it.rect.h,
+                                    it.color.r, it.color.g, it.color.b, it.color.a,
+                                    r, nullptr, nullptr, -1, inner);
                 break;
             }
             case DrawCmd::TexturedRect: {

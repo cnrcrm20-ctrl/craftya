@@ -44,7 +44,7 @@ public:
                           float r, float g, float b, float a,
                           float corner,
                           const float* gradTop, const float* gradBottom,
-                          int atlasTile = -1);
+                          int atlasTile = -1, float ringInner = 0.f);
     void drawUiTextRun(float x, float y, float pxSize, float r, float g, float b,
                        const uint8_t* rows, int glyphW, int glyphH, int count);
     // --- modern yazı: alfa dokulu glif atlası ---

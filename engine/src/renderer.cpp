@@ -123,6 +123,10 @@ uniform bool uUseTex;
 uniform bool uUseGrad;
 uniform vec2 uHalfSize;    // yarı genişlik/yükseklik (px)
 uniform float uCorner;     // yuvarlatılmış köşe yarıçapı (px)
+// HALKA: uRingInner > 0 ise iç yarıçapın altındaki pikseller atılır.
+// Önceden halka çizimi dolu disk olarak çıkıyordu (joystick/buton çerçeveleri
+// iç içe dolgulu daireler gibi görünüyordu).
+uniform float uRingInner;  // px, 0 = dolu
 out vec4 fragColor;
 
 // yuvarlatılmış dikdörtgen SDF: <0 içeride
@@ -139,6 +143,11 @@ void main() {
         float d = sdRoundBox(vLocal, uHalfSize, uCorner);
         // 1 px yumuşak geçiş: keskin basamak yok
         float a = 1.0 - smoothstep(-0.75, 0.75, d);
+        // halka: iç disk boş bırakılır (aynı yumuşak geçişle)
+        if (uRingInner > 0.5) {
+            float di = length(vLocal) - uRingInner;
+            a *= smoothstep(-0.75, 0.75, di);
+        }
         c.a *= a;
     }
 
