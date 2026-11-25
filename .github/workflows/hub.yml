@@ -229,6 +229,7 @@ jobs:
           echo "--- oyunda teyit: /lp user <isim> info ---"
 
       - name: Tünel anahtarı durumu
+        if: always()
         id: playit-key
         env:
           PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
@@ -242,7 +243,7 @@ jobs:
           fi
 
       - name: Tünel (playit) — dışarıdan erişim
-        if: ${{ steps.playit-key.outputs.present == 'true' }}
+        if: ${{ always() && steps.playit-key.outputs.present == 'true' }}
         env:
           PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
         run: |
@@ -265,6 +266,7 @@ jobs:
 
       # ---------------------------------------------------------------- çalışma
       - name: Sunucu çalışıyor (devir zamanına kadar)
+        if: always()
         env:
           RUN_MINUTES_INPUT: ${{ github.event.inputs.run_minutes }}
         run: |
