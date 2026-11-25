@@ -5,6 +5,9 @@ on:
     branches: [ 'arena/deab440e-craftya' ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -90,7 +93,9 @@ jobs:
       - name: APK yerini bul
         run: |
           echo "== APK arama =="
-          find android -name "*.apk" -type f 2>/dev/null | tee /tmp/apks.txt
+          find android \( -name "*.apk" -o -name "*.aab" \) -type f 2>/dev/null | tee /tmp/apks.txt
+          du -h /tmp/apks.txt 2>/dev/null || true
+          while read -r f; do ls -lh "$f"; done < /tmp/apks.txt
           echo "== cikti klasoru =="
           find android -path "*outputs*" -name "*.apk" -o -path "*outputs*" -type d 2>/dev/null | head -30
           if [ ! -s /tmp/apks.txt ]; then
@@ -110,9 +115,9 @@ jobs:
           if-no-files-found: error
 
       - name: Release olustur
-        if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
         run: |
           gh release create "v0.2.${{ github.run_number }}" \
             /tmp/apkout/*.apk \
