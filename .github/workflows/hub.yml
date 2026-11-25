@@ -59,6 +59,11 @@ jobs:
       # ---------------------------------------------------------------- hazırlık
       - uses: actions/checkout@v4
 
+      # Runner değişince dünya artifact'tan runtime/data'ya açılır; Docker
+      # bind mount'ları ve tüm workflow log yönlendirmeleri için dizinler hazır olsun.
+      - name: Çalışma dizinlerini hazırla
+        run: mkdir -p logs artifacts runtime/data/{auth,lobby,survival,skyblock,bedwars,duello,parkur}
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -160,6 +165,7 @@ jobs:
 
       - name: Proxy pluginleri yüklendi mi (/hub / Geyser / LibreLogin)
         run: |
+          mkdir -p logs
           # Sessiz başarısızlığı yakala: plugin yüklenmezse /hub oyunda YOK olur,
           # oyuncu "komut yok" der ve kimse nedenini bilmez. Log'dan kanıtla.
           docker compose -f docker-compose.hub.yml logs velocity > logs/velocity.log 2>&1 || true
@@ -183,6 +189,7 @@ jobs:
 
       - name: Yetkiler yüklendi mi (LuckPerms + kurucu)
         run: |
+          mkdir -p logs
           # LuckPerms gerçekten yüklendi mi + gruplar okundu mu
           docker compose -f docker-compose.hub.yml logs lobby > logs/lobby-auth.log 2>&1 || true
           if grep -qiE "luckperms.*(enabled|loaded)" logs/lobby-auth.log; then

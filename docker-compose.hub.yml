@@ -82,7 +82,7 @@ services:
       LEVEL: "world"
       MEMORY: "${LOBBY_MEM:?}"
     volumes:
-      - lobby-data:/data
+      - ./runtime/data/lobby:/data
       - ./runtime/rooms/lobby:/config:ro
       - ./runtime/plugins:/plugins:ro
 
@@ -98,7 +98,7 @@ services:
       LEVEL: "world"
       MEMORY: "${AUTH_MEM:?}"
     volumes:
-      - auth-data:/data
+      - ./runtime/data/auth:/data
       - ./runtime/rooms/auth:/config:ro
       - ./runtime/plugins:/plugins:ro
 
@@ -111,7 +111,7 @@ services:
       <<: *room_env
       MEMORY: "${SURVIVAL_MEM:?}"
     volumes:
-      - survival-data:/data
+      - ./runtime/data/survival:/data
       - ./runtime/rooms/survival:/config:ro
       - ./runtime/plugins:/plugins:ro
 
@@ -124,7 +124,7 @@ services:
       <<: *room_env
       MEMORY: "${SKYBLOCK_MEM:?}"
     volumes:
-      - skyblock-data:/data
+      - ./runtime/data/skyblock:/data
       - ./runtime/rooms/skyblock:/config:ro
       - ./runtime/plugins:/plugins:ro
 
@@ -137,7 +137,7 @@ services:
       <<: *room_env
       MEMORY: "${BEDWARS_MEM:?}"
     volumes:
-      - bedwars-data:/data
+      - ./runtime/data/bedwars:/data
       - ./runtime/rooms/bedwars:/config:ro
       - ./runtime/plugins:/plugins:ro
 
@@ -150,7 +150,7 @@ services:
       <<: *room_env
       MEMORY: "${DUELLO_MEM:?}"
     volumes:
-      - duello-data:/data
+      - ./runtime/data/duello:/data
       - ./runtime/rooms/duello:/config:ro
       - ./runtime/plugins:/plugins:ro
 
@@ -163,19 +163,12 @@ services:
       <<: *room_env
       MEMORY: "${PARKUR_MEM:?}"
     volumes:
-      - parkur-data:/data
+      - ./runtime/data/parkur:/data
       - ./runtime/rooms/parkur:/config:ro
       - ./runtime/plugins:/plugins:ro
 
 volumes:
   velocity-data:
-  auth-data:
-  lobby-data:
-  survival-data:
-  skyblock-data:
-  bedwars-data:
-  duello-data:
-  parkur-data:
 
 networks:
   hub:

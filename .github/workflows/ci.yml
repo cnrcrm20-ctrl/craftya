@@ -111,6 +111,11 @@ jobs:
           vports = [str(p) for p in s['velocity']['ports']]
           assert any('19132/tcp' in p for p in vports), 'Geyser sinyalleşme 19132/tcp yok'
           assert any('19132/udp' in p for p in vports), 'Geyser oyun 19132/udp yok'
+          # Dünya klasörleri runtime/data altında olmalı; isimli Docker volume
+          # Actions runner'ı değişince kaybolur ve world-sync artifact üretemez.
+          for room in ('auth','lobby','survival','skyblock','bedwars','duello','parkur'):
+              expected = f'./runtime/data/{room}:/data'
+              assert expected in s[room]['volumes'], f'{room}: kalıcı bind mount yok'
           # odalarda Bedrock portu OLMAMALI (Geyser proxy'de)
 
           env = s['survival']['environment']
