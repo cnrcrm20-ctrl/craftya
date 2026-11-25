@@ -36,17 +36,46 @@ add_library(craftya SHARED
 
 target_include_directories(craftya PRIVATE ${ENGINE_DIR}/include)
 
-# NativeActivity yardımcı katmanı (pencere/girdi döngüsü) — NDK ile birlikte gelir
+# ---------------------------------------------------------------------------
+# NativeActivity yardımcı katmanı (pencere/girdi döngüsü) — NDK ile gelir.
+#
+# DİKKAT: Yalnızca .c dosyası eklenmeli; NDK kökünü include yoluna eklemek
+# android/input.h'i gölgeleyip "unknown type AInputEvent" hatası verir.
+#
+# DİKKAT: -fvisibility=hidden (yukarıdaki preset) EL İLE KALDIRILMALI.
+# Bu glue dosyası Android'in uygulamayı başlatmak için aradığı
+# ANativeActivity_onCreate sembolünü tanımlar. Sembol gizlenirse
+# libcraftya.so yüklenirken "ANativeActivity_onCreate bulunamadı" hatası
+# oluşur ve uygulama AÇILIRKEN ÇÖKER (ekran hiç gelmez).
+# ---------------------------------------------------------------------------
 add_library(native_app_glue STATIC
         ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
 target_include_directories(native_app_glue PUBLIC
         ${ANDROID_NDK}/sources/android/native_app_glue)
+set_target_properties(native_app_glue PROPERTIES
+        C_VISIBILITY_PRESET default
+        VISIBILITY_INLINES_HIDDEN OFF)
+
+# Glue'nun tüm nesneleri .so'ya dahil edilsin; aksi halde statik kütüphane
+# içindeki ANativeActivity_onCreate bağlanmaz ve sembol hiç var olmaz.
+target_link_options(craftya PRIVATE
+        "-Wl,--whole-archive" "$<TARGET_FILE:native_app_glue>" "-Wl,--no-whole-archive")
 
 target_link_libraries(craftya
-        native_app_glue
         android
         log
         EGL
         GLESv3
         m
 )
+
+# ---------------------------------------------------------------------------
+# CI DOĞRULAMASI: APK'nın gerçekten açılabilir olduğunu derleme anında kanıtla.
+# Sembol yoksa build BURADA durur — bir daha "çalışmayan APK" yayınlanmaz.
+# ---------------------------------------------------------------------------
+add_custom_command(TARGET craftya POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+                -DLIB=$<TARGET_FILE:craftya>
+                -DNM=${CMAKE_NM}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_entry.cmake
+        COMMENT "libcraftya.so giris sembolu (ANativeActivity_onCreate) dogrulaniyor")

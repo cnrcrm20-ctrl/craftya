@@ -25,6 +25,7 @@ namespace {
 
 struct AppState {
     android_app* app = nullptr;
+    EngineConfig cfg;          // yüzey gelince motoru başlatmak için saklanır
     Engine engine;
     GLESBackend gl;
     UiRenderer ui;
@@ -40,6 +41,9 @@ struct AppState {
     float dpi = 1.f;
     // dokunmatik durum
     bool backPressed = false;
+    // dünyanın ilk kez çizildiği an (yükleme ekranı için)
+    double worldShownAt = 0.0;
+    double bootAt = 0.0;
 };
 
 double nowSeconds() {
@@ -64,6 +68,12 @@ void handleCmd(android_app* app, int32_t cmd) {
             break;
         case APP_CMD_INIT_WINDOW: {
             if (!app->window) return;
+            // motoru YUZEY HAZIRKEN baslat (GL baglami gerekli)
+            if (!st->engineReady) {
+                st->engine.init(st->cfg);
+                st->engineReady = true;
+                LOGI("motor hazir");
+            }
             int w = ANativeWindow_getWidth(app->window);
             int h = ANativeWindow_getHeight(app->window);
             st->width = w;
@@ -193,7 +203,6 @@ void syncMeshes(AppState& st) {
 
 void renderFrame(AppState& st) {
     if (!st.hasSurface || !st.engineReady) return;
-    Game& g = st.engine.game();
 
     // doku atlası: ilk karede üret ve GPU'ya yükle (cihazda üretilir, dosya yok)
     if (!st.atlasUploaded) {
@@ -204,22 +213,32 @@ void renderFrame(AppState& st) {
         LOGI("atlas yuklendi: %dx%d", atlas.image().width, atlas.image().height);
     }
 
+    // DİKKAT: game() yalnızca dünya başladıktan sonra geçerlidir.
+    // Ana menüde çağrılırsa nullptr dereference ile ÇÖKER.
+    const bool inWorld = (st.engine.state() == EngineState::Playing);
+
     const float sky[3] = {0.53f, 0.72f, 0.98f};
     st.gl.beginFrame(sky, 60.f, 96.f);
-    st.gl.setCamera(g.camera(), static_cast<float>(st.width) / static_cast<float>(st.height));
-    st.gl.setSun(1.f, nullptr);
 
-    syncMeshes(st);
-
-    for (const auto& vc : g.visibleChunks()) {
-        auto it = st.gpuMeshes.find(vc.pos);
-        if (it == st.gpuMeshes.end() || !it->second.uploaded) continue;
-        st.gl.drawMesh(it->second, Vec3f(static_cast<float>(vc.pos.x * CHUNK_W),
-                                         static_cast<float>(vc.pos.y * CHUNK_H),
-                                         static_cast<float>(vc.pos.z * CHUNK_W)));
+    if (inWorld) {
+        Game& g = st.engine.game();
+        st.gl.setCamera(g.camera(), static_cast<float>(st.width) / static_cast<float>(st.height));
+        st.gl.setSun(1.f, nullptr);
+        syncMeshes(st);
+        for (const auto& vc : g.visibleChunks()) {
+            auto it = st.gpuMeshes.find(vc.pos);
+            if (it == st.gpuMeshes.end() || !it->second.uploaded) continue;
+            st.gl.drawMesh(it->second, Vec3f(static_cast<float>(vc.pos.x * CHUNK_W),
+                                             static_cast<float>(vc.pos.y * CHUNK_H),
+                                             static_cast<float>(vc.pos.z * CHUNK_W)));
+        }
+        if (st.worldShownAt == 0.0) {
+            st.worldShownAt = nowSeconds();
+            LOGI("dunya cizildi (acilistan %.1f sn)", st.worldShownAt - st.bootAt);
+        }
     }
 
-    // arayüz
+    // arayüz (menüler dahil — oyun olmasa da çizilir)
     st.drawList.clear();
     st.engine.render(&st.drawList);
     st.ui.render(st.gl, st.drawList, st.width, st.height);
@@ -234,22 +253,18 @@ void androidMain(android_app* app) {
     app->onAppCmd = handleCmd;
     app->onInputEvent = handleInput;
 
-    EngineConfig cfg;
-    cfg.seed = 20261124u;
-    cfg.savePath = "craftya_world.dat";
-    cfg.settingsPath = "craftya_settings.json";
-    st.engine.init(cfg);
-    st.engineReady = true;
+    st.bootAt = nowSeconds();
+    st.lastTime = st.bootAt;
+    LOGI("Craftya aciliyor");
 
-    // dünyayı hemen başlat (menü yerine doğrudan oyuna gir)
-    st.engine.startNewWorld(cfg.seed);
-    st.engine.onSurfaceCreated(1280, 720, 2.75f);
-
-    // dünyayı ısıt: yüzey oluştuğunda hemen mesh hazır olsun
-    for (int i = 0; i < 12; ++i) st.engine.update(1.f / 60.f);
-
-    st.lastTime = nowSeconds();
-    LOGI("Craftya basladi (seed=%u)", cfg.seed);
+    // NOT: Eskiden motor burada, YÜZEY HAZIR OLMADAN başlatılıyor ve
+    // startNewWorld() çağrılıyordu. Bu, menüyü atlayıp doğrudan oyuna
+    // girmek demekti: ana menü/mods/ayarlar hiç görünmüyor, oyuncu
+    // nerede olduğunu anlamıyordu. Artık motor ilk yüzeyle birlikte
+    // başlatılıyor ve normal akış (ana menü) izleniyor.
+    st.cfg.seed = 20261124u;
+    st.cfg.savePath = "craftya_world.dat";
+    st.cfg.settingsPath = "craftya_settings.json";
 
     while (st.running) {
         int events = 0;

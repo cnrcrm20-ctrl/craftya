@@ -107,6 +107,44 @@ jobs:
           while read -r f; do cp "$f" /tmp/apkout/; done < /tmp/apks.txt
           ls -la /tmp/apkout
 
+      - name: APK icerik denetimi (acilabilirlik + giris sembolu)
+        run: |
+          set -o pipefail
+          APK=$(ls /tmp/apkout/*.apk | head -1)
+          echo "== $APK =="
+          ls -lh "$APK"
+          echo "== zip icerigi (ilk 40) =="
+          unzip -l "$APK" | head -40
+          echo "== BLOKLARI DENETLE =="
+          unzip -l "$APK" | grep -qE 'classes[0-9]*\.dex' \
+            && echo "! dex var (hasCode=true olmali)" \
+            || echo "+ dex YOK (hasCode=false dogru)"
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcraftya.so' \
+            && echo "+ libcraftya.so VAR" \
+            || { echo "::error::libcraftya.so APK icinde YOK — oyun kodu paketlenmemis"; exit 1; }
+          mkdir -p /tmp/apkx && cd /tmp/apkx && rm -rf * && unzip -oq "$APK"
+          echo "== libcraftya.so boyutu ve girdi sembolu =="
+          ls -lh lib/arm64-v8a/libcraftya.so
+          NM=$(ls "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/bin/llvm-nm | head -1)
+          echo "nm: $NM"
+          "$NM" -D --defined-only lib/arm64-v8a/libcraftya.so > /tmp/syms.txt
+          grep -c . /tmp/syms.txt | xargs echo "acik sembol sayisi:"
+          grep -q "ANativeActivity_onCreate" /tmp/syms.txt \
+            && echo "+ ANativeActivity_onCreate VAR — APK acilabilir" \
+            || { echo "::error::ANativeActivity_onCreate YOK — APK acilirken coker"; exit 1; }
+          grep -q "android_main" /tmp/syms.txt \
+            && echo "+ android_main VAR" || echo "! android_main sembolde yok (statik baglanmis olabilir)"
+          echo "== manifest (kotlin/apktool yoksa aapt2 ile) =="
+          AAPT=$(ls "$ANDROID_SDK_ROOT"/build-tools/*/aapt2 2>/dev/null | head -1)
+          if [ -n "$AAPT" ]; then
+            "$AAPT" dump badging "$APK" 2>/dev/null | head -12 || true
+          fi
+          echo "== BOYUT: $(stat -c%s "$APK") bayt =="
+          if [ "$(stat -c%s "$APK")" -lt 150000 ]; then
+            echo "::error::APK cok kucuk (<150 KB) — yerel kutuphane paketlenmemis olabilir"
+            exit 1
+          fi
+
       - name: APK artefakt
         uses: actions/upload-artifact@v4
         with:
