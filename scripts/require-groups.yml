@@ -1,0 +1,16 @@
+# ============================================================================
+#  Craftya — otomatik yetki (ilk açılışta bir kez uygulanır)
+# ============================================================================
+#  Neden dosya: LuckPerms'in kendi "grupları dosyadan yükle" özelliği var.
+#  Elle /lp komutu yazmaya gerek yok, oyuncu ilk girişte yetkisiyle gelir.
+#
+#  Kaynak: .env içindeki ADMIN_PLAYERS ("oyuncu:grup,oyuncu:grup")
+#  render.py bu dosyayı üretir → runtime/plugins/LuckPerms/require-groups.yml
+#
+#  BEDROCK oyuncusu: Floodgate ön ekiyle yazılır → .bozturk2642
+#  Java oyuncusu:    düz yazılır → bozturk2642
+#  İkisi AYRI kayıttır: Bedrock ve Java aynı isimli olsa bile farklı UUID.
+
+# >>> AUTO_GROUPS:BEGIN
+# (render.py doldurur — elle düzenleme)
+# <<< AUTO_GROUPS:END

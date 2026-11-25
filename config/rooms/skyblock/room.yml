@@ -1,0 +1,11 @@
+# Gökyüzü Adası — void dünya, BentoBox adaları üretir.
+mode: survival
+difficulty: normal
+max_players: 20
+view_distance: 7
+sim_distance: 5
+seed: skyblock
+level_type: minecraft:flat
+xmx: 1920M
+softmax: 576M
+motd: gokyuzu adasi          # MOTD açıklaması — renk gradient.py'den

@@ -1,0 +1,254 @@
+# ============================================================================
+#  Craftya yetki grupları + tag'ler
+# ============================================================================
+#  Prefix = hem kafada hem chatte görünen tag. TEK KAYNAK burası.
+#  Renkler `scripts/gradient.py` tarafından üretilir (GRADIENT blokları).
+#  Elle renk yazma — `python3 scripts/gradient.py --apply` çalıştır.
+#
+#  Renk mantığı: yukarı gidildikçe daha sıcak renk. Süs değil hiyerarşi.
+
+groups:
+  oyuncu:
+    display-name: 'Oyuncu'
+    weight: 10
+    # >>> GRADIENT:BEGIN lp.oyuncu
+    prefix: ''
+    # <<< GRADIENT:END lp.oyuncu
+    suffix: ''
+    # ========================================================================
+    #  OYUNCU — oyunun temel komutları. Bunlar olmadan oyuncu hiçbir şey yapamaz.
+    #  Kural: sadece kendi işini gören komutlar. Başkasına dokunan yok.
+    # ========================================================================
+    permissions:
+      # ---- EssentialsX: ev ----
+      - 'essentials.home'
+      - 'essentials.sethome'
+      - 'essentials.delhome'
+      - 'essentials.sethome.bed'                # yatakta uyurken ev güncelleme
+      - 'essentials.sethome.multiple'           # isimli ev desteği (2+ ev için şart)
+
+      # ---- EssentialsX: ışınlanma ----
+      - 'essentials.tpa'
+      - 'essentials.tpahere'
+      - 'essentials.tptoggle'
+      - 'essentials.tpaccept'
+      - 'essentials.tpdeny'
+      - 'essentials.tpacancel'
+      - 'essentials.spawn'
+      - 'essentials.warp'
+      - 'essentials.warp.list'
+      - 'essentials.back.ondeath'              # ölünce döndüğü yere git
+      - 'essentials.getpos'
+
+      # ---- EssentialsX: iletişim ----
+      - 'essentials.msg'
+      - 'essentials.reply'
+      - 'essentials.mail'
+      - 'essentials.mail.send'
+      - 'essentials.helpop'
+      - 'essentials.help'
+      - 'essentials.list'
+      - 'essentials.me'
+      - 'essentials.seen'
+      - 'essentials.realname'
+      - 'essentials.ping'
+
+      # ---- EssentialsX: ekonomi ----
+      - 'essentials.balance'
+      - 'essentials.pay'
+      - 'essentials.balancetop'
+
+      # ---- EssentialsX: genel ----
+      - 'essentials.afk'
+      - 'essentials.rules'
+      - 'essentials.motd'
+      - 'essentials.suicide'
+      - 'essentials.kit'
+      - 'essentials.kits.oyuncu'
+      - 'essentials.showkit'
+      - 'essentials.worth'
+      - 'essentials.sell'
+
+      # ---- Sohbet: renk YOK (tag taklidi olmasın) ----
+      - 'essentials.ignore'                    # birini susturma (kendi tarafında)
+
+      # ---- GriefPrevention: arsa/claim (survival'ın bel kemiği) ----
+      - 'griefprevention.claims'
+      - 'griefprevention.claim.command.abandon'
+      - 'griefprevention.claim.command.abandon-all'
+      - 'griefprevention.claim.command.trust'
+      - 'griefprevention.claim.command.untrust'
+      - 'griefprevention.claim.command.trust.list'
+      - 'griefprevention.claim.command.container'
+      - 'griefprevention.claim.command.access'
+      - 'griefprevention.claim.command.permission'
+      - 'griefprevention.claim.command.subdivide'
+      - 'griefprevention.claim.command.visualize'
+      - 'griefprevention.claim.command.buyblocks'
+      - 'griefprevention.claim.command.sellblocks'
+      - 'griefprevention.claim.command.trapped'
+      - 'griefprevention.claim.command.list'
+
+      # ---- BedWars ----
+      - 'bw.cmd.help'
+      - 'bw.cmd.join'
+      - 'bw.cmd.leave'
+      - 'bw.cmd.stats'
+      - 'bw.cmd.list'
+      - 'bw.cmd.rejoin'
+      - 'bw.cmd.party'
+
+      # ---- Parkur ----
+      - 'parkour.join'
+      - 'parkour.leave'
+      - 'parkour.stats'
+      - 'parkour.leaderboard'
+      - 'parkour.help'
+
+      # ---- Kimlik doğrulama (proxy) ----
+      - 'librelogin.player.login'
+      - 'librelogin.player.register'
+      - 'librelogin.player.logout'
+      - 'librelogin.player.totp'
+      - 'librelogin.player.change.password'
+
+      # ---- Hub komutu (/hub /lobby /lobi) ----
+      - 'velocityhub.command.hub'
+
+      # BİLİNÇLİ OLARAK YOK:
+      #   essentials.chat.color    → tag taklidi (herkes [KURUCU] yazabilirdi)
+      #   essentials.gamemode      → oyun dengesi
+      #   essentials.give          → item hilesi
+      #   essentials.fly           → VIP ve üstü
+      #   essentials.tp            → başkasına ışınlanma (mod ve üstü)
+      #   coreprotect.*            → blok geçmişi sadece moderation
+
+  vip:
+    display-name: 'VIP'
+    weight: 20
+    parents: [oyuncu]
+    # >>> GRADIENT:BEGIN lp.vip
+    prefix: '&l&#ffc93cV&#ffda7dI&#ffe9a3P&r'
+    # <<< GRADIENT:END lp.vip
+    suffix: ''
+    permissions:
+      # ---- ev hakkı: 5 ----
+      - 'essentials.sethome.multiple.vip'
+      # ---- bakım/konfor ----
+      - 'essentials.fly'                # lobide + survival'da uçuş (PvP'de kapanır)
+      - 'essentials.fly.safelogin'
+      - 'essentials.fly.others'
+      - 'essentials.nick'
+      - 'essentials.hat'
+      - 'essentials.workbench'
+      - 'essentials.back'
+      - 'essentials.tptoggle'
+      - 'essentials.enderchest'
+      - 'essentials.repair'
+      - 'essentials.repair.armor'
+      # ---- sohbet: renk YOK ----
+      #   'essentials.chat.color' resmi listede doğrulanamadı; verilseydi
+      #   VIP kendini [KURUCU] gibi gösterebilirdi. Tag sistemi bozulmasın.
+      # ---- kit ----
+      - 'essentials.kits.vip'
+      # ---- claim bonusu ----
+      - 'griefprevention.claim.create'
+      - 'griefprevention.claims.max.5'
+
+  mod:
+    display-name: 'MOD'
+    weight: 50
+    parents: [vip]
+    # >>> GRADIENT:BEGIN lp.mod
+    prefix: '&l&#4d9fffM&#5fc7ffO&#6ee7ffD&r'
+    # <<< GRADIENT:END lp.mod
+    suffix: ''
+    permissions:
+      # ---- oyuncu yönetimi ----
+      - 'essentials.kick'
+      - 'essentials.mute'              # süreli susturma da bununla
+      - 'essentials.tempban'
+      - 'essentials.ban'
+      - 'essentials.unban'
+      - 'essentials.kickall'
+      - 'essentials.togglejail'
+      - 'essentials.setjail'
+      # ---- görünmezlik / izleme ----
+      - 'essentials.vanish'
+      - 'essentials.vanish.see'
+      - 'essentials.socialspy'
+      - 'essentials.invsee'
+      - 'essentials.enderchest.others'
+      - 'essentials.seen.ip'           # IP görebilme (ban takibi)
+      # ---- ışınlanma (moderation) ----
+      - 'essentials.tp'
+      - 'essentials.tphere'
+      - 'essentials.tp.others'
+      - 'essentials.tptoggle.others'
+      - 'essentials.tppos'
+      - 'essentials.tpoffline'
+      # ---- blok geçmişi: GERİ ALMA YOK (sadece bakma) ----
+      - 'coreprotect.inspect'
+      - 'coreprotect.lookup'
+      - 'coreprotect.teleport'
+      # ---- anti-cheat: alarm görsün, kick atabilsin ----
+      - 'grimac.alerts'
+      - 'grimac.kick'
+      # ---- oda yönetimi ----
+      - 'essentials.setspawn'
+      - 'essentials.setwarp'
+      - 'essentials.delwarp'
+      # ---- yasak: BİLİNÇLİ OLARAK YOK ----
+      #   coreprotect.rollback/restore → admin ve üstü (yanlışlıkla dünya silmek kolay)
+      #   essentials.gamemode/give    → admin ve üstü
+
+  admin:
+    display-name: 'ADMIN'
+    weight: 80
+    parents: [mod]
+    # >>> GRADIENT:BEGIN lp.admin
+    prefix: '&l&#ff4d4dA&#ff6149D&#ff7146M&#ff7e41I&#ff8a3dN&r'
+    # <<< GRADIENT:END lp.admin
+    suffix: ''
+    permissions:
+      - '*'
+      - '-bukkit.command.op'          # op verme YETKİSİ YOK (bilinçli)
+      - '-essentials.stop'            # sunucuyu durduramaz (devir döngüsünü bozar)
+      - '-essentials.reloadall'       # yanlış reload = tüm ağ düşer
+      # DİKKAT: '*' bu satırlardan ÖNCE gelmeli, sonra negatif ezsin.
+      # LuckPerms'te son yazılan kazanır (aynı seviyede).
+
+  kurucu:
+    display-name: 'KURUCU'
+    weight: 100
+    parents: [admin]
+    # >>> GRADIENT:BEGIN lp.kurucu
+    prefix: '&l&#ff2d55K&#ff4d4cU&#ff6243R&#ff8848U&#ffb158C&#ffd166U&r'
+    # <<< GRADIENT:END lp.kurucu
+    suffix: ' §8[§c★§8]'
+    permissions:
+      # admin'in "-bukkit.command.op" yasağını burada EZİYORUZ (alt grup üstü yener)
+      - 'bukkit.command.op'
+      - 'librelogin.admin'
+      - 'luckperms.editor'
+
+  bot:
+    display-name: 'BOT'
+    weight: 5
+    # >>> GRADIENT:BEGIN lp.bot
+    prefix: '&l&#00d4a0B&#36dcb1O&#4de3c0T&r'
+    # <<< GRADIENT:END lp.bot
+    suffix: ''
+    permissions:
+      - 'essentials.tp'
+      - 'essentials.gamemode'
+      - 'essentials.time'
+      - 'essentials.weather'
+      - 'worldedit.*'
+      - 'grimac.bypass'
+      - 'librelogin.player.*'
+      - 'citizens.npc.create'
+      - 'citizens.npc.move'
+      - 'citizens.npc.command'
+      - 'holograms.*'
+    # YOK (bilinçli): op, ban, whitelist, kick, stop

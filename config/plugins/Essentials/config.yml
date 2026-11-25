@@ -1,0 +1,54 @@
+# EssentialsX — Türkçe arayüz
+# EssentialsX jar'ında messages_tr.properties bulunur; locale: tr ile devreye girer.
+locale: tr
+currency-symbol: 'TL'
+starting-balance: 100
+sethome-multiple:
+  # anahtar = LuckPerms'teki izin: essentials.sethome.multiple.<anahtar>
+  default: 1
+  vip: 5
+teleport-cooldown: 5
+teleport-delay: 3
+spawn-if-no-home: true
+
+# ---------------------------------------------------------------------------
+#  Oyuncu kit'i — /kit ile başlangıç eşyası
+# ---------------------------------------------------------------------------
+kits:
+  oyuncu:
+    delay: 3600                    # 1 saatte bir
+    items:
+      - stone_sword 1
+      - bread 16
+      - oak_log 32
+      - torch 32
+    # bu kit parasız
+    cost: 0
+  vip:
+    delay: 3600
+    items:
+      - iron_sword 1
+      - iron_pickaxe 1
+      - bread 32
+      - oak_log 64
+      - torch 64
+      - ender_pearl 2
+    cost: 0
+
+# ---------------------------------------------------------------------------
+#  Sosyal komutların bekleme süreleri (spam olmasın)
+# ---------------------------------------------------------------------------
+teleport-invulnerability: 5        # ışınlanma sonrası 5 sn dokunulmazlık
+
+
+# ---------------------------------------------------------------------------
+#  Giriş / çıkış duyuruları — gradyanlı (scripts/gradient.py üretir)
+# ---------------------------------------------------------------------------
+#  &r ile kapanıyor: isim kalın görünmesin diye.
+
+# >>> GRADIENT:BEGIN join
+custom-join-message: '&l&#7ef29dC&#77ebb2R&#70e5c5A&#68ddd5F&#5fd6e4T&#55cef2Y&#49c6ffA&r §8— §ahos geldin §f%player%'
+# <<< GRADIENT:END join
+# >>> GRADIENT:BEGIN quit
+custom-quit-message: '§8— §7gorusuruz §f%player%'
+# <<< GRADIENT:END quit

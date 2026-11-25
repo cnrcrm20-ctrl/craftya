@@ -1,0 +1,37 @@
+# ============================================================================
+#  Geyser (Velocity sürümü) — Bedrock köprüsü, PROXY üzerinde çalışır
+# ============================================================================
+#  Neden proxy'de: Geyser backend'lerin her birine kurulursa hem gereksiz hem
+#  hatalı olur (uzak sunucu auth'u, port çakışması). Doğrusu proxy'de tek kopya;
+#  backend'lere sadece Floodgate gerekir (Bedrock derisi/kimliği için).
+#
+#  Java oyuncusu: 25565/tcp → Velocity
+#  Bedrock oyuncusu: 19132 → Geyser → Velocity → lobi
+
+bedrock:
+  # Sinyalleşme 19132/tcp, oyun 19132/udp — İKİSİ de açık olmalı.
+  address: 0.0.0.0
+  port: 19132
+  clone-remote-port: false
+  # 26.60+ Bedrock istemcileri NetherNet kullanıyor. Sorun çıkarsa "raknet"/"both".
+  transport: nethernet
+  motd1: "Craftya"
+  motd2: "sunucu dunyasi - mc.craftya.dev"
+  server-name: "Craftya"
+
+remote:
+  # Velocity'ye bağlanır (aynı compose ağı → servis adı)
+  address: velocity
+  port: 25565
+  # Floodgate proxy'de olduğu için Bedrock oyuncu Java hesabı istemez
+  auth-type: floodgate
+
+# Bedrock istemcisine duyurulan sürüm aralığı
+max-players: 100
+debug-mode: false
+show-cooldown: title
+show-coordinates: true
+truncate-chat-messages: false
+default-locale: tr_tr
+allow-third-party-capes: true
+allow-third-party-ears: false

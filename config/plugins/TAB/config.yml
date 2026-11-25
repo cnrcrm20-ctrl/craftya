@@ -1,0 +1,47 @@
+# ============================================================================
+#  TAB — kafada (tab listesi) ve isimlerin üstünde tag'ler
+# ============================================================================
+#  "Havalı" görünmenin sırrı süs değil TUTARLILIK: aynı tag, aynı renk,
+#  aynı sıra — kafada, chatte, isim etiketinde.
+#
+#  Renkler `scripts/gradient.py` üretir (GRADIENT blokları).
+#  Hex desteği: TAB  &#rrggbb (1.16+)
+#  Elle renk yazma — `python3 scripts/gradient.py --apply`
+
+header-footer:
+  enabled: true
+  header:
+    # >>> GRADIENT:BEGIN tab.header
+    - '&l&#7ef29dC&#77ebb2R&#70e5c5A&#68ddd5F&#5fd6e4T&#55cef2Y&#49c6ffA&r §8| §7sunucu dunyasi'
+    - '§8online: §a%server_online% §8· §7TPS: §a%server_tps_1_colored%'
+    # <<< GRADIENT:END tab.header
+  footer:
+    # >>> GRADIENT:BEGIN tab.footer
+    - '&#21d07am&#27d384c&#2dd58d.&#31d896c&#36da9er&#3adca6a&#3ddfadf&#40deb8t&#41dac6y&#43d6d3a&#45d3df.&#46ceead&#48caf5e&#49c6ffv&r'
+    - '§8bakim: 6 saatte bir, ~30sn'
+    # <<< GRADIENT:END tab.footer
+
+# ---- kafadaki isim + tag -------------------------------------------------
+tablist-name-formatting:
+  enabled: true
+  # Sıra: prefix (gradyan tag) + beyaz isim
+  format: '%luckperms_prefix% §f%player%'
+
+# ---- isim altı sayı istemiyoruz (kalabalık yapar) -----------------------
+belowname:
+  enabled: false
+
+playerlist-objective:
+  enabled: true
+  title: '§8— §aCraftya §8—'
+  rows:
+    - '§7ping  §f%ping%'
+    - '§7dunya §f%world%'
+  sorting-types:
+    - 'GROUPS:kurucu,admin,mod,vip,oyuncu,bot'
+
+# ---- takım/nametag: prefix doğru gözüksün -------------------------------
+scoreboard-teams:
+  enabled: true
+  enable-collision: true
+  invisible-nametags: false

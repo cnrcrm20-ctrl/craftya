@@ -1,0 +1,11 @@
+# Düello 1v1 — küçük arena, kit seçimi, 3 raunt.
+mode: adventure
+difficulty: peaceful
+max_players: 8
+view_distance: 6
+sim_distance: 4
+seed: duello
+level_type: minecraft:flat
+xmx: 1536M
+softmax: 448M
+motd: 1v1          # MOTD açıklaması — renk gradient.py'den

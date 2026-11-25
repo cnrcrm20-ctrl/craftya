@@ -1,0 +1,40 @@
+# ============================================================================
+#  GriefPrevention — arsa (claim) koruması
+# ============================================================================
+#  Survival'ın bel kemiği: oyuncu evini koruyabilsin, kimse bozamasın.
+
+claims:
+  # Oyuncu ilk girişte bu kadar bloğa kadar bedava arsa alır.
+  # 0 yaparsan hiç kimse claim yapamaz (kötü — oyuncu evini koruyamaz).
+  initial-claim-blocks: 4000
+
+  # Arsa genişletme: kazandıkça blok alır (ekonomi bağlantısı)
+  claim-blocks-bought-per-minute: 120
+
+  # Oyuncu başına maksimum arsa sayısı (VIP/moderasyon izinle artar)
+  max-claims-per-player: 10
+
+  # Alt bölüm (subdivide) derinliği
+  max-subdivisions: 3
+
+  # Kullanılmayan arsaları otomatik sil (0 = kapat)
+  cleanup:
+    inactive-days: 0
+
+# ---- koruma ----
+protection:
+  # Yeni oyuncu (ilk 1 saat) yabancı arsaya giremez → bot/raid koruması
+  new-player-protection-hours: 1
+
+  # PvP: sadece survival'da ve arsa dışında
+  pvp:
+    enabled: true
+    only-outside-claims: true
+
+  # Sandık/ocak koruması: arsa sahibi izin verene kadar kapalı
+  containers:
+    require-claim-owner: true
+
+# ---- bildirim ----
+messages:
+  locale: tr

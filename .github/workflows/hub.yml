@@ -1,0 +1,275 @@
+name: Craftya Hub
+
+# ============================================================================
+#  6 saatlik devir döngüsü.
+#
+#  Neden: GitHub Actions işi en fazla 6 saat sürer. Sunucu bu süre sonunda
+#  yeniden başlar. Zincir kendini besler: her run, bitmeden bir sonrakini
+#  kuyruğa atar → kesintisiz devam.
+#
+#  Akış:
+#    05:50  duyuru (10 dk)   →  05:58 (2 dk)  →  05:59 kaydet+arşivle
+#    06:00  yeni run: arşivi indir → dünyaları aç → konteynerler → hazır
+#
+#  Kesinti hedefi: 25-35 sn. Oyuncu hiçbir şey kaybetmez (envanter/konum Paper'da).
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'start = sunucuyu ayağa kaldır | chain = sadece devir'
+        required: false
+        default: 'start'
+      run_minutes:
+        description: 'Bu run kaç dakika çalışsın (boş = 340). Test için 8 yaz.'
+        required: false
+        default: ''
+  schedule:
+    # Emniyet ağı: zincir bir şekilde koparsa 6 saatte bir yeniden başlat
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: read
+  actions: write          # sonraki run'ı tetiklemek ve artifact için
+
+concurrency:
+  group: craftya-hub
+  cancel-in-progress: false   # devir zinciri: eski run bitmeden yeni başlamasın
+
+env:
+  MC_VERSION: '1.21.4'
+  RUN_MINUTES: 340            # 5s40dk çalış, sonra devret (6 saat = 360 dk)
+  NODE_VERSION: '20'
+
+jobs:
+  hub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+
+    steps:
+      # ---------------------------------------------------------------- hazırlık
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Disk alanı (runner'da 14 GB boş olabilir)
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android 2>/dev/null || true
+          sudo apt-get clean
+          df -h /
+
+      - name: Sırlar ve config üretimi
+        env:
+          VELOCITY_SECRET: ${{ secrets.VELOCITY_SECRET }}
+          RCON_PASSWORD: ${{ secrets.RCON_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
+          MC_VERSION: ${{ env.MC_VERSION }}
+        run: |
+          # gradyanlar önce: config'ler üretilmiş renklerle dolsun
+          python3 scripts/gradient.py --apply
+          # sırlar boşsa render.py üretir (run içinde yaşar) — sunucu yine çalışır
+          python3 scripts/render.py
+          # container bellek limitleri (render üretir) → compose bunu okur
+          cat runtime/rooms.env >> .env
+          grep -E "_MEM=" .env | head -10
+
+      - name: Plugin ve çekirdek indir
+        run: |
+          node scripts/plugins.mjs download
+          ls -lh runtime/plugins | head -25
+
+      - name: Önceki dünyayı geri yükle
+        id: restore
+        run: |
+          mkdir -p artifacts
+          # en son başarılı run'ın artifact'ını indir (varsa)
+          gh run download --repo "$GITHUB_REPOSITORY" \
+            --name craftya-world --dir artifacts/latest 2>/dev/null || echo "önceki dünya yok (ilk açılış)"
+          if ls artifacts/latest/*.tar.gz >/dev/null 2>&1; then
+            ./scripts/world-sync.sh restore "$(ls -1t artifacts/latest/*.tar.gz | head -1)"
+            echo "restored=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "restored=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # ---------------------------------------------------------------- sunucu
+      - name: Sunucuları başlat
+        run: |
+          docker compose -f docker-compose.hub.yml up -d
+          echo "containers:"; docker compose -f docker-compose.hub.yml ps
+
+      - name: Hazır olana kadar bekle
+        run: |
+          echo "odaların açılması bekleniyor (en fazla 8 dk)..."
+          for i in $(seq 1 96); do
+            ready=0
+            for p in 25566 25567 25568 25569 25570 25571 25572; do
+              if timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/$p" 2>/dev/null; then
+                ready=$((ready+1))
+              fi
+            done
+            if [ "$ready" -ge 7 ]; then
+              echo "7 oda hazır (6 oyun + limbo, tur $i)"
+              break
+            fi
+            echo "  tur $i: $ready/7 oda açık"
+            sleep 5
+          done
+          # proxy
+          timeout 30 bash -c 'until echo > /dev/tcp/127.0.0.1/25565 2>/dev/null; do sleep 2; done' \
+            && echo "velocity hazır" || echo "velocity uyarı: açılmadı"
+
+      - name: Proxy pluginleri yüklendi mi (/hub / Geyser / LibreLogin)
+        run: |
+          # Sessiz başarısızlığı yakala: plugin yüklenmezse /hub oyunda YOK olur,
+          # oyuncu "komut yok" der ve kimse nedenini bilmez. Log'dan kanıtla.
+          docker compose -f docker-compose.hub.yml logs velocity > logs/velocity.log 2>&1 || true
+          rc=0
+          for plug in velocity-hub-command Geyser Floodgate LibreLogin; do
+            if grep -qi "$plug" logs/velocity.log; then
+              echo "✓ $plug yüklendi"
+            else
+              echo "✗ $plug YÜKLENMEDİ — /hub /lobby veya Bedrock girişi çalışmaz"
+              rc=1
+            fi
+          done
+          # komut kaydı log'da görünür (plugin başına değişebilir → uyarı, hata değil)
+          grep -iE "registered.*(hub|lobby)|/hub|/lobby" logs/velocity.log | head -5 \
+            && echo "✓ /hub komutu log'da göründü" \
+            || echo "! /hub komut kaydı log'da görünmedi (plugin yine çalışıyor olabilir)"
+          # ilk 40 satır her zaman dursun (teşhis için)
+          echo "--- velocity log (ilk 40) ---"
+          head -40 logs/velocity.log || true
+          exit $rc
+
+      - name: Yetkiler yüklendi mi (LuckPerms + kurucu)
+        run: |
+          # LuckPerms gerçekten yüklendi mi + gruplar okundu mu
+          docker compose -f docker-compose.hub.yml logs lobby > logs/lobby-auth.log 2>&1 || true
+          if grep -qiE "luckperms.*(enabled|loaded)" logs/lobby-auth.log; then
+            echo "✓ LuckPerms yüklendi"
+          else
+            echo "✗ LuckPerms yüklenmedi — yetkiler çalışmaz"
+          fi
+          # gruplar okundu mu (grup sayısı log'da veya /lp info ile)
+          if docker compose -f docker-compose.hub.yml exec -T lobby \
+               rcon-cli --port 25578 lp listgroups 2>/dev/null | grep -q kurucu; then
+            echo "✓ gruplar yüklendi: kurucu/oyuncu/vip/mod/admin/bot"
+          else
+            echo "! /lp listgroups cevap vermedi — LuckPerms henüz hazır olmayabilir"
+          fi
+          # otomatik yetki: kurucu oyuncu tanımlı mı
+          if docker compose -f docker-compose.hub.yml exec -T lobby \
+               rcon-cli --port 25578 lp user .bozturk2642 info 2>/dev/null | grep -qi kurucu; then
+            echo "✓ .bozturk2642 → kurucu (Bedrock yetkisi hazır)"
+          else
+            echo "! .bozturk2642 henüz kayıtlı değil (oyuncu ilk girişte otomatik atanır)"
+          fi
+          echo "--- oyunda teyit: /lp user <isim> info ---"
+
+      - name: Tünel (playit) — dışarıdan erişim
+        if: ${{ env.PLAYIT_SECRET != '' }}
+        env:
+          PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
+        run: |
+          # playit ajanı: sabit adres (secret sabit) → mc.craftya.dev SRV hedefi
+          # playit ajanı Bedrock UDP'sini de taşıyabilmeli. NetherNet sinyal
+          # için TCP de istiyor; ajan TCP+UDP açmıyorsa Geyser'i raknet'e al.
+          curl -sSL https://playit.gg/download/linux -o /tmp/playit && chmod +x /tmp/playit
+          nohup /tmp/playit --secret "$PLAYIT_SECRET" > logs/playit.log 2>&1 &
+          sleep 8
+          echo "--- playit ---"
+          grep -iE 'tunnel|address|error|secret' logs/playit.log | head -20 || true
+          # Bedrock tüneli gerçekten ayakta mı: kısa sağlık kaydı
+          for i in $(seq 1 6); do
+            if grep -qiE '19132|bedrock' logs/playit.log; then
+              echo "✓ bedrock tüneli göründü"; break
+            fi
+            [ "$i" = 6 ] && echo "! bedrock tüneli log'da yok — panelde 'Minecraft Bedrock' tüneli ekli mi?"
+            sleep 5
+          done
+
+      # ---------------------------------------------------------------- çalışma
+      - name: Sunucu çalışıyor (devir zamanına kadar)
+        env:
+          RUN_MINUTES_INPUT: ${{ github.event.inputs.run_minutes }}
+        run: |
+          # test modunda kısa süre çalış
+          if [ -n "$RUN_MINUTES_INPUT" ]; then
+            RUN_MINUTES="$RUN_MINUTES_INPUT"
+            echo "TEST MODU: $RUN_MINUTES dk çalışıp duracak, devir zinciri kurulmayacak"
+          fi
+          echo "başlangıç: $(date -u +%H:%M:%S)"
+          # governor arka planda
+          nohup ./scripts/mem-governor.sh > logs/governor.out 2>&1 &
+          # 10 dk'da bir sağlık kaydı
+          END=$(( $(date +%s) + RUN_MINUTES * 60 ))
+          while [ "$(date +%s)" -lt "$END" ]; do
+            echo "--- $(date -u +%H:%M:%S) ---"
+            for r in lobby survival skyblock bedwars duello parkur; do
+              st=$(docker inspect -f '{{.State.Status}}' "hub-$r" 2>/dev/null || echo yok)
+              mem=$(docker stats --no-stream --format '{{.MemUsage}}' "hub-$r" 2>/dev/null || echo -)
+              printf '  %-10s %-8s %s\n' "$r" "$st" "$mem"
+            done
+            sleep 600
+          done
+          tail -30 logs/mem-governor.log 2>/dev/null || true
+
+      # ---------------------------------------------------------------- devir
+      - name: Duyuru (bakım)
+        if: always()
+        run: |
+          for r in lobby survival skyblock bedwars duello parkur; do
+            docker exec "hub-$r" rcon-cli say "§e[Bakim] §7Sunucu yeniden basliyor, 30 saniye icinde geri donun." 2>/dev/null || true
+          done
+          sleep 10
+
+      - name: Dünyayı kaydet ve arşivle
+        if: always()
+        id: archive
+        run: |
+          ./scripts/world-sync.sh save || true
+          ./scripts/world-sync.sh upload
+
+      - name: Dünyayı artifact olarak yükle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftya-world
+          path: artifacts/craftya-world-*.tar.gz
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Logları sakla (hata ayıklama)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftya-logs-${{ github.run_number }}
+          path: |
+            logs/
+            runtime/rooms/*/logs/latest.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Durdur
+        if: always()
+        run: docker compose -f docker-compose.hub.yml down || true
+
+      # ---------------------------------------------------------------- zincir
+      - name: Sonraki run'ı kuyruğa at (kesintisiz zincir)
+        # Test modunda (kısa süre) zincir KURULMAZ — yoksa hiç durmayan döngü olur.
+        if: always() && github.event.inputs.run_minutes == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "sonraki devir tetikleniyor..."
+          gh workflow run hub.yml --repo "$GITHUB_REPOSITORY" -f mode=chain || \
+            echo "uyarı: sonraki run tetiklenemedi — schedule (6 saatlik) emniyet ağı devrede"

@@ -1,0 +1,262 @@
+name: CI
+
+# Hızlı doğrulama: config, script, manifest. Sunucu açmaz.
+# Amaç: bozuk YAML/JS/bash repoya girmesin.
+
+on:
+  push:
+    branches: ['arena/deab440e-craftya']
+    paths: ['config/**', 'scripts/**', 'tools/**', 'plugins/**', 'docker-compose*.yml', '.github/workflows/ci.yml']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Python bağımlılıkları
+        run: python -m pip install --quiet pyyaml
+
+      - name: YAML doğrulama
+        run: |
+          python - <<'PY'
+          import sys, yaml, pathlib
+          bad = 0
+          files = list(pathlib.Path('.').rglob('*.yml')) + list(pathlib.Path('.').rglob('*.yaml'))
+          for p in sorted(files):
+              if '.git/' in str(p) or 'runtime/' in str(p):
+                  continue
+              try:
+                  yaml.safe_load(p.read_text(encoding='utf-8'))
+                  print(f'ok   {p}')
+              except Exception as e:
+                  print(f'HATA {p}: {e}')
+                  bad = 1
+          sys.exit(bad)
+          PY
+
+      - name: JS sözdizimi
+        run: |
+          for f in $(find tools scripts -name '*.js' -o -name '*.mjs' | sort); do
+            node --check "$f" || exit 1
+            echo "ok   $f"
+          done
+
+      - name: Bash sözdizimi + shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          for f in scripts/*.sh; do
+            bash -n "$f" && echo "ok   $f"
+            shellcheck -S error "$f" || exit 1
+          done
+
+      - name: Python sözdizimi
+        run: |
+          for f in scripts/*.py; do python -m py_compile "$f" && echo "ok   $f"; done
+
+      - name: Gradyanlar güncel mi
+        run: python3 scripts/gradient.py --check
+
+      - name: Config üretimi (uçtan uca)
+        run: |
+          cp .env.example .env
+          python3 scripts/render.py
+          test -f runtime/velocity/velocity.toml || { echo "velocity.toml üretilmedi"; exit 1; }
+          for r in lobby survival skyblock bedwars duello parkur; do
+            test -f "runtime/rooms/$r/server.properties" || { echo "$r config üretilmedi"; exit 1; }
+            grep -q "server-port=" "runtime/rooms/$r/server.properties" || exit 1
+            # rcon şifresi üretilmiş olmalı (boş olmamalı)
+            grep -qE "rcon.password=.+" "runtime/rooms/$r/server.properties" || { echo "$r: rcon şifresi boş"; exit 1; }
+          done
+          # her odanın farklı RCON portu
+          ports=$(grep -h "^rcon.port=" runtime/rooms/*/server.properties | sort -u | wc -l)
+          test "$ports" -eq 6 || { echo "RCON portları çakışıyor ($ports farklı)"; exit 1; }
+          echo "6 oda config'i üretildi, RCON portları ayrık"
+
+      - name: Compose tutarlılığı
+        run: |
+          python - <<'PY'
+          import yaml
+          d = yaml.safe_load(open('docker-compose.hub.yml'))
+          s = d['services']
+          need = {'velocity','auth','lobby','survival','skyblock','bedwars','duello','parkur'}
+          assert need <= set(s), f'eksik servis: {need - set(s)}'
+          # SADECE velocity dışarıya açık: 25565/tcp + 19132/tcp+udp (Geyser)
+          for name, svc in s.items():
+              for p in svc.get('ports', []):
+                  p = str(p)
+                  if name == 'velocity' or p.startswith('127.0.0.1'):
+                      continue
+                  raise AssertionError(f'{name}: dışarıya açık port {p} (sadece velocity olmalı)')
+          vports = [str(p) for p in s['velocity']['ports']]
+          assert any('19132/tcp' in p for p in vports), 'Geyser sinyalleşme 19132/tcp yok'
+          assert any('19132/udp' in p for p in vports), 'Geyser oyun 19132/udp yok'
+          # odalarda Bedrock portu OLMAMALI (Geyser proxy'de)
+
+          env = s['survival']['environment']
+          assert str(env.get('EULA','')).upper() == 'TRUE'
+          assert str(env.get('TYPE','')).upper() == 'PAPER'
+          assert 'VELOCITY_SECRET' in env
+          # sır repo'da olmamalı
+          props = open('config/templates/server.properties.tpl').read()
+          assert 'rcon.password=${RCON_PASSWORD}' in props, 'rcon şablonu ${RCON_PASSWORD} kullanmalı'
+          # limbo (auth) sadece localhost
+          for p in s['auth'].get('ports', []):
+              assert str(p).startswith('127.0.0.1'), f'auth dışa açık: {p}'
+          print('compose tutarlı: 8 servis, sadece proxy dışa açık, auth localhost, sırlar yer tutucu')
+          PY
+
+      - name: Komut kısayolları (/hub /lobby /lobi)
+        run: |
+          python - <<'PY'
+          import json, pathlib, re
+          cfg = pathlib.Path('config/rooms')
+          all_rooms = sorted(d.name for d in cfg.iterdir()
+                             if d.is_dir() and not d.name.startswith('_'))
+          # 6 oyun odası + 1 limbo (auth); limbo'da oyun komutu yok
+          rooms = [r for r in all_rooms if r != 'auth']
+          assert len(rooms) == 6, f'oyun odası 6 olmalı, bulunan: {rooms}'
+          assert 'auth' in all_rooms, 'limbo (auth) odası yok'
+
+          # _common oda sanılmamalı
+          common = cfg / '_common' / 'commands.yml'
+          assert common.exists(), '_common/commands.yml yok'
+
+          # hub hedefi velocity.toml'daki sunucu adıyla aynı olmalı
+          hub = pathlib.Path('config/plugins/velocity-hub-command/config.yml').read_text()
+          dest = re.search(r'^hubServerName:\s*(\S+)', hub, re.M).group(1).strip('"\'')
+          assert dest in rooms, f'hub hedefi {dest} oyun odası değil'
+          assert re.search(r'^useLobbyAlias:\s*true', hub, re.M), '/lobby alias kapalı'
+
+          # her oda aynı kısayolları almalı
+          for r in rooms:
+              for alias in ('lobi:', 'l:', 'merkez:'):
+                  assert alias in common.read_text(), f'{alias} eksik'
+
+          m = json.loads(pathlib.Path('plugins/manifest.json').read_text())
+          hp = [x for x in m['plugins'] if x['slug'] == 'velocity-hub-command']
+          assert hp, 'velocity-hub-command manifestte yok'
+          assert hp[0]['rooms'] == ['proxy'] and hp[0]['target'] == 'proxy-plugin', \
+              '/hub proxy plugin olmalı (backend değil)'
+          print(f'✓ komut kısayolları: /hub /lobby proxy\'de, /lobi /l /merkez 6 odada')
+          PY
+
+      - name: Kimlik doğrulama mimarisi
+        run: |
+          python - <<'PY'
+          import json, pathlib, re
+          m = json.loads(pathlib.Path('plugins/manifest.json').read_text())
+          by = {p['slug']: p for p in m['plugins']}
+
+          # AuthMe oda başına oturum demek → olmamalı
+          assert 'authmereloaded' not in by, 'AuthMe kalmamalı (oda başına ayrı oturum)'
+
+          ll = by.get('librelogin')
+          assert ll, 'LibreLogin manifestte yok'
+          assert ll['rooms'] == ['proxy'] and ll['target'] == 'proxy-plugin', \
+              'LibreLogin proxy plugin olmalı'
+
+          cfg = pathlib.Path('config/plugins/LibreLogin/config.yml').read_text()
+          # oda geçişinde şifre sorulmamalı
+          st = re.search(r'^session-timeout:\s*(\d+)', cfg, re.M)
+          assert st and int(st.group(1)) > 0, 'session-timeout 0 → her girişte şifre'
+          # Bedrock şifresiz
+          assert re.search(r'^floodgate:\s*\n\s+enabled:\s*true', cfg, re.M), 'Floodgate kapalı'
+          # limbo gerçek oda olmalı
+          rooms = {d.name for d in pathlib.Path('config/rooms').iterdir()
+                   if d.is_dir() and not d.name.startswith('_')}
+          limbo = re.search(r'^limbo:\s*\n\s+-\s*(\S+)', cfg, re.M)
+          assert limbo and limbo.group(1) in rooms, 'limbo odası tanımsız'
+          print(f'✓ auth: proxy\'de tek giriş, limbo={limbo.group(1)}, '
+                f'oturum {int(st.group(1))//86400} gün, Bedrock şifresiz')
+          PY
+
+      - name: Bellek bütçesi (16 GB runner)
+        run: |
+          python - <<'PY'
+          import pathlib, re
+          cfg = pathlib.Path('config/rooms')
+          def mb(v):
+              v = v.strip().upper()
+              return int(float(v[:-1]) * 1024) if v.endswith('G') else int(float(v.rstrip('M')))
+          total = 0
+          for d in sorted(cfg.iterdir()):
+              if not d.is_dir() or d.name.startswith('_'):
+                  continue
+              y = (d / 'room.yml').read_text()
+              xmx = mb(re.search(r'^xmx:\s*(\S+)', y, re.M).group(1))
+              soft = re.search(r'^softmax:\s*(\S+)', y, re.M)
+              assert not soft or mb(soft.group(1)) <= xmx, f'{d.name}: softmax > xmx'
+              # container limiti = heap + JVM heap dışı pay
+              total += xmx + max(320, int(xmx * 0.22))
+          budget = 16384 - 1500 - 384      # runner - OS/docker - proxy
+          assert total <= budget, f'bellek toplamı {total/1024:.1f} GB > bütçe {budget/1024:.1f} GB'
+          print(f'✓ bellek: {total/1024:.1f} GB ≤ {budget/1024:.1f} GB (16 GB runner)')
+
+          # compose'da odalar için sabit MEMORY olmamalı
+          comp = pathlib.Path('docker-compose.hub.yml').read_text()
+          fixed = re.findall(r'container_name: hub-(?!velocity)([a-z]+)\n(?:.*\n)*?\s+MEMORY: "[0-9]+[GM]"', comp)
+          assert not fixed, f'sabit MEMORY: {[f for f in fixed]}'
+          print('✓ compose MEMORY env\'den (tek kaynak room.yml)')
+          PY
+
+      - name: Yetki (LuckPerms) sağlık kontrolü
+        run: |
+          python - <<'PY'
+          import pathlib, yaml
+          g = yaml.safe_load(pathlib.Path('config/plugins/LuckPerms/groups.yml').read_text())
+          groups = g['groups']
+          for grp, par in {'vip':'oyuncu','mod':'vip','admin':'mod','kurucu':'admin'}.items():
+              assert par in groups[grp]['parents'], f'{grp} -> {par} bagi yok'
+          oy = set(groups['oyuncu']['permissions'])
+          for need in ('essentials.home','essentials.sethome','essentials.tpa',
+                       'essentials.spawn','essentials.msg','essentials.balance',
+                       'essentials.kit','griefprevention.claims','bw.cmd.join'):
+              assert need in oy, f'oyuncu {need} yapamaz'
+          for bad_perm in ('essentials.gamemode','essentials.give','essentials.fly',
+                           'essentials.tp','essentials.god','coreprotect.rollback','*'):
+              assert bad_perm not in oy, f'oyuncuda {bad_perm} var'
+          assert 'essentials.chat.color' not in oy, 'oyuncu sohbet rengi = tag taklidi'
+          for grp in ('oyuncu','vip','mod','admin','bot'):
+              assert not any(x.startswith('bukkit.command.op') for x in groups[grp]['permissions']), \
+                  f'{grp}: op izni var'
+          assert 'bukkit.command.op' in groups['kurucu']['permissions'], 'kurucu op veremez'
+          for grp in ('vip','mod','admin','kurucu','bot'):
+              assert groups[grp].get('prefix'), f'{grp}: prefix yok'
+          print(f"OK yetki: {len(oy)} oyuncu izni, hiyerarsi tam, op sadece kurucu")
+          PY
+
+      - name: Manifest kontrolü
+        run: |
+          node -e "
+          const m = require('./plugins/manifest.json');
+          const slugs = m.plugins.map(p => p.slug);
+          const dup = slugs.filter((s,i) => slugs.indexOf(s) !== i);
+          if (dup.length) { console.error('tekrarlanan slug:', dup); process.exit(1); }
+          const fs = require('fs');
+          const rooms = new Set([...fs.readdirSync('config/rooms'), 'all', 'proxy']);
+          for (const p of m.plugins) {
+            for (const r of p.rooms) {
+              if (!rooms.has(r)) { console.error(`${p.slug}: olmayan oda '${r}'`); process.exit(1); }
+            }
+          }
+          const g = m.plugins.find(p => p.slug === 'geyser');
+          if (!g || JSON.stringify(g.rooms) !== '["proxy"]') {
+            console.error('Geyser rooms=["proxy"] olmali (backend degil)'); process.exit(1);
+          }
+          if (g.platform !== 'velocity') { console.error('Geyser platform=velocity olmali'); process.exit(1); }
+          const mandatory = m.plugins.filter(p => p.mandatory).length;
+          console.log(\`manifest ok: \${m.plugins.length} plugin (\${mandatory} zorunlu), \${m.core.length} çekirdek\`);
+          "

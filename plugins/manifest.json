@@ -1,0 +1,213 @@
+{
+  "_comment": "Craftya plugin manifestosu. Sabit URL YOK: her plugin slug ile çözülür, sürüm API'den gelir. Böylece asset adı değişince kurulum kırılmaz.",
+  "game_version": "26.3",
+  "loaders": [
+    "paper",
+    "bukkit",
+    "spigot"
+  ],
+  "plugins": [
+    {
+      "slug": "viaversion",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "eski istemci → yeni sunucu"
+    },
+    {
+      "slug": "viabackwards",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "yeni istemci → eski sunucu"
+    },
+    {
+      "slug": "geyser",
+      "mandatory": true,
+      "rooms": [
+        "proxy"
+      ],
+      "note": "Java↔Bedrock köprüsü (proxy üzerinde)",
+      "source": "geyser",
+      "platform": "velocity",
+      "target": "proxy-plugin"
+    },
+    {
+      "slug": "floodgate",
+      "mandatory": true,
+      "rooms": [
+        "proxy"
+      ],
+      "note": "Bedrock kimliği (proxy üzerinde)",
+      "source": "geyser",
+      "platform": "velocity",
+      "target": "proxy-plugin"
+    },
+    {
+      "slug": "luckperms",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "prefix/tag, izinler"
+    },
+    {
+      "slug": "vault",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "ekonomi API köprüsü"
+    },
+    {
+      "slug": "placeholderapi",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "TAB/hologram değişkenleri"
+    },
+    {
+      "slug": "tab",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "tab listesi, prefix"
+    },
+    {
+      "slug": "coreprotect",
+      "mandatory": true,
+      "rooms": [
+        "survival",
+        "skyblock"
+      ],
+      "note": "blok geçmişi, rollback"
+    },
+    {
+      "slug": "spark",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "profiler"
+    },
+    {
+      "slug": "grimac",
+      "mandatory": false,
+      "rooms": [
+        "survival",
+        "bedwars",
+        "duello"
+      ],
+      "note": "anti-cheat",
+      "optional_reason": "yoksa sunucu çalışır, hile denetimi zayıflar"
+    },
+    {
+      "slug": "chunky",
+      "mandatory": false,
+      "rooms": [
+        "all"
+      ],
+      "note": "harita ön üretimi",
+      "optional_reason": "ilk gün lag'i için"
+    },
+    {
+      "slug": "essentialsx",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "/home /tpa /spawn"
+    },
+    {
+      "slug": "griefprevention",
+      "mandatory": false,
+      "rooms": [
+        "survival"
+      ],
+      "note": "arsa/claim koruması",
+      "optional_reason": "survival koruması; yoksa oyuncu evi korunmaz"
+    },
+    {
+      "slug": "decentholograms",
+      "mandatory": false,
+      "rooms": [
+        "lobby"
+      ],
+      "note": "lobi hologramları",
+      "optional_reason": "görsel, oyunu engellemez"
+    },
+    {
+      "slug": "citizens",
+      "mandatory": false,
+      "rooms": [
+        "lobby"
+      ],
+      "note": "lobi NPC'leri",
+      "optional_reason": "oda seçimi menüsüz de çalışır"
+    },
+    {
+      "slug": "bedwars1058",
+      "mandatory": false,
+      "rooms": [
+        "bedwars"
+      ],
+      "note": "bedwars oyun modu",
+      "optional_reason": "oda boş kalır ama sunucu çalışır"
+    },
+    {
+      "slug": "parkour",
+      "mandatory": false,
+      "rooms": [
+        "parkur"
+      ],
+      "note": "parkur modu",
+      "optional_reason": "oda boş kalır"
+    },
+    {
+      "slug": "essentialsxchat",
+      "mandatory": true,
+      "rooms": [
+        "all"
+      ],
+      "note": "chat formati + tag gorunumu"
+    },
+    {
+      "slug": "velocity-hub-command",
+      "mandatory": true,
+      "rooms": [
+        "proxy"
+      ],
+      "platform": "velocity",
+      "target": "proxy-plugin",
+      "note": "/hub /lobby /spawn → çekirdek lobi odası (proxy'de, tüm sunucularda geçerli)"
+    },
+    {
+      "slug": "librelogin",
+      "mandatory": true,
+      "rooms": [
+        "proxy"
+      ],
+      "platform": "velocity",
+      "target": "proxy-plugin",
+      "note": "proxy'de tek giriş; Bedrock (Floodgate) şifresiz; 2FA"
+    }
+  ],
+  "core": [
+    {
+      "type": "papermc",
+      "project": "paper",
+      "target": "runtime/server/paper.jar",
+      "note": "sunucu çekirdeği"
+    },
+    {
+      "type": "papermc",
+      "project": "velocity",
+      "target": "runtime/server/velocity.jar",
+      "note": "proxy"
+    }
+  ]
+}

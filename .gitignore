@@ -1,14 +1,25 @@
-build/
-*.o
-*.a
-*.so
-.gradle/
-android/app/build/
-android/.gradle/
-local.properties
+# sırlar
+.env
+.env.local
+*.pem
+*.p12
+*.keystore
+
+# üretilen dosyalar
+runtime/
+artifacts/
+logs/
+out/
+.cache/
+node_modules/
+
+# plugin jar'ları (manifest + API çözer, binary repoda durmaz)
+plugins/*.jar
+!plugins/manifest.json
+
+# editör / os
+.vscode/
+.idea/
+.DS_Store
+*.swp
 *.log
-mcserver/.env
-mcserver/data/
-mcserver/backups/
-mcserver/plugins/*.jar
-!mcserver/plugins/.gitkeep

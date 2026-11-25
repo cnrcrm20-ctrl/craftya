@@ -1,0 +1,21 @@
+# ============================================================================
+#  velocity-hub-command — /hub /lobby /spawn
+# ============================================================================
+#  Neden PROXY'de: komut 6 odada birden geçerli olmalı. Backend'lere ayrı ayrı
+#  koysaydık 6 kopya, 6 yerde bakım, kaçınılmaz tutarsızlık olurdu.
+#  Proxy'de tek kopya: bir kez çalışır, sunucu değiştirmeyi proxy yapar.
+#
+#  Hedef: "lobby" = Velocity'deki sunucu adı (çekirdek hub odası).
+#  velocity.toml'daki [servers] içinde lobby = "127.0.0.1:25566".
+
+# Hedef sunucu adı (velocity.toml [servers] anahtarı ile BİREBİR aynı olmalı)
+hubServerName: lobby
+
+# /lobby komutu da /hub'ın takma adı olsun
+useLobbyAlias: true
+
+# ---- Türkçe mesajlar ------------------------------------------------------
+transferMessage: "§aÇekirdeğe gönderiliyor..."
+alreadyConnectedMessage: "§7Zaten çekirdektesin kanka."
+serverNotAvailableMessage: "§cÇekirdek şu an kapalı. Birkaç saniye sonra dene."
+playerOnlyMessage: "§cBu komut sadece oyuncular için."

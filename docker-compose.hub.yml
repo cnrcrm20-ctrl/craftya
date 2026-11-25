@@ -1,0 +1,182 @@
+# ============================================================================
+#  Craftya Hub — Velocity + 6 oda (TEK makine)
+# ============================================================================
+#  Neden tek makine: 6 ayrı runner = aralarında 20-80 ms gecikme. Burada tüm
+#  odalar aynı host'ta, localhost üzerinden konuşur → oda geçişi ~0 ms.
+#
+#  Portlar: velocity 25565 dışarıya açık. Odalar SADECE 127.0.0.1'e bağlanır
+#  (dışarıdan kimse odaya doğrudan giremez, proxy zorunlu).
+#  Bedrock (Geyser) 19132/udp lobi konteynerinde dinler.
+#
+#  Config: runtime/ (render.py üretir). Şablon düzenle, bu dosyayı değil.
+# ============================================================================
+
+x-room: &room
+  image: "${MC_IMAGE:-itzg/minecraft-server:java25}"
+  # NOT: ops.json sadece Java oyuncuları için. Bedrock/Floodgate UUID'si farklı
+  # olduğu için Bedrock oyuncusuna op VERİLMEZ — yetki LuckPerms'ten verilir.
+  # Boş bırakırsan kimse op olmaz (güvenli varsayılan).
+  restart: "no"                 # devir döngüsünü workflow yönetir
+  tty: true
+  stdin_open: true
+  networks: [hub]
+  environment: &room_env
+    EULA: "TRUE"
+    TYPE: "PAPER"
+    VERSION: "${MC_VERSION:-26.3}"
+    ONLINE_MODE: "FALSE"
+    PAPER_VELOCITY_SUPPORT: "true"
+    VELOCITY_SECRET: "${VELOCITY_SECRET:?VELOCITY_SECRET gerekli (render.py üretir)}"
+    # JVM: SoftMaxHeapSize governor tarafından canlı değiştirilir
+    JVM_XX_OPTS: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:G1ReservePercent=20"
+    # Aikar yerine kendi bayraklarımız (SoftMax dahil) → kapat
+    USE_AIKAR_FLAGS: "false"
+    ENFORCE_SECURE_PROFILE: "FALSE"
+    SPAWN_PROTECTION: "0"
+    ENABLE_RCON: "true"
+    RCON_PASSWORD: "${RCON_PASSWORD:?RCON_PASSWORD gerekli}"
+    # Java oyuncu op listesi (virgülle). Boş = kimse op değil.
+    # Bedrock/Floodgate oyuncusu BURAYA YAZILMAZ (UUID uyuşmaz) → LuckPerms.
+    OPS: "${MC_OPS_OPTIONAL}"
+  volumes:
+    - ./runtime/plugins:/plugins:ro
+
+services:
+  # ------------------------------------------------------------------ proxy
+  velocity:
+    image: "${PROXY_IMAGE:-itzg/mc-proxy:java25}"
+    container_name: hub-velocity
+    restart: "no"
+    ports:
+      - "0.0.0.0:25565:25565"        # Java
+      - "0.0.0.0:19132:19132/tcp"    # Geyser sinyalleşme (NetherNet)
+      - "0.0.0.0:19132:19132/udp"    # Geyser oyun
+    environment:
+      TYPE: "VELOCITY"
+      MEMORY: "384M"
+      ONLINE_MODE: "FALSE"
+      VELOCITY_SECRET: "${VELOCITY_SECRET:?}"
+      # Plugin'leri BİZ indiriyoruz (plugins.mjs) → tek kaynak, sürüm sabit,
+      # hash doğrulanır. itzg'nin kendi indirmesi kapalı (çift indirme olmasın).
+      PLUGINS: ""
+    volumes:
+      - velocity-data:/server
+      - ./runtime/velocity:/config:ro
+      # tüm proxy pluginleri + config'leri tek dizinde (render.py + plugins.mjs yazar)
+      - ./runtime/proxy-plugins:/server/plugins
+    networks: [hub]
+    healthcheck:
+      test: ["CMD-SHELL", "mc-health || exit 1"]
+      interval: 20s
+      start_period: 60s
+      retries: 5
+
+  # ------------------------------------------------------------------ odalar
+  lobby:
+    <<: *room
+    container_name: hub-lobby
+    ports:
+      - "127.0.0.1:25566:25566"
+    environment:
+      <<: *room_env
+      LEVEL: "world"
+      MEMORY: "${LOBBY_MEM:?}"
+    volumes:
+      - lobby-data:/data
+      - ./runtime/rooms/lobby:/config:ro
+      - ./runtime/plugins:/plugins:ro
+
+  # ---------------------------------------------------------------- limbo
+  # Oyuncu burada /login yazana kadar bekler. Proxy dışından erişilemez.
+  auth:
+    <<: *room
+    container_name: hub-auth
+    ports:
+      - "127.0.0.1:25572:25572"
+    environment:
+      <<: *room_env
+      LEVEL: "world"
+      MEMORY: "${AUTH_MEM:?}"
+    volumes:
+      - auth-data:/data
+      - ./runtime/rooms/auth:/config:ro
+      - ./runtime/plugins:/plugins:ro
+
+  survival:
+    <<: *room
+    container_name: hub-survival
+    ports:
+      - "127.0.0.1:25567:25567"
+    environment:
+      <<: *room_env
+      MEMORY: "${SURVIVAL_MEM:?}"
+    volumes:
+      - survival-data:/data
+      - ./runtime/rooms/survival:/config:ro
+      - ./runtime/plugins:/plugins:ro
+
+  skyblock:
+    <<: *room
+    container_name: hub-skyblock
+    ports:
+      - "127.0.0.1:25568:25568"
+    environment:
+      <<: *room_env
+      MEMORY: "${SKYBLOCK_MEM:?}"
+    volumes:
+      - skyblock-data:/data
+      - ./runtime/rooms/skyblock:/config:ro
+      - ./runtime/plugins:/plugins:ro
+
+  bedwars:
+    <<: *room
+    container_name: hub-bedwars
+    ports:
+      - "127.0.0.1:25569:25569"
+    environment:
+      <<: *room_env
+      MEMORY: "${BEDWARS_MEM:?}"
+    volumes:
+      - bedwars-data:/data
+      - ./runtime/rooms/bedwars:/config:ro
+      - ./runtime/plugins:/plugins:ro
+
+  duello:
+    <<: *room
+    container_name: hub-duello
+    ports:
+      - "127.0.0.1:25570:25570"
+    environment:
+      <<: *room_env
+      MEMORY: "${DUELLO_MEM:?}"
+    volumes:
+      - duello-data:/data
+      - ./runtime/rooms/duello:/config:ro
+      - ./runtime/plugins:/plugins:ro
+
+  parkur:
+    <<: *room
+    container_name: hub-parkur
+    ports:
+      - "127.0.0.1:25571:25571"
+    environment:
+      <<: *room_env
+      MEMORY: "${PARKUR_MEM:?}"
+    volumes:
+      - parkur-data:/data
+      - ./runtime/rooms/parkur:/config:ro
+      - ./runtime/plugins:/plugins:ro
+
+volumes:
+  velocity-data:
+  auth-data:
+  lobby-data:
+  survival-data:
+  skyblock-data:
+  bedwars-data:
+  duello-data:
+  parkur-data:
+
+networks:
+  hub:
+    driver: bridge

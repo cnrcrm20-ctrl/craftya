@@ -1,0 +1,23 @@
+# ============================================================================
+#  Auth (limbo) — oyuncunun kimlik doğrulamasını beklediği boş oda
+# ============================================================================
+#  Neden ayrı oda: LibreLogin oyuncuyu önce buraya alır, /login veya /register
+#  yazana kadar başka yere geçemez. Sonra lobiye yollar.
+#
+#  Bu oda GÖRÜNMEZ: proxy dışından erişilemez, velocity.toml'da try listesine
+#  GİRMEZ, oyuncu burada dünyayı görmez (boş dünya, sabit konum).
+#
+#  Bellek: 512M — içinde oyun yok, sadece bekleme odası.
+#  Dünya: düz boşluk (void). Yerçekimi/ölüm yok, oyuncu havada durur.
+
+mode: adventure
+difficulty: peaceful
+max_players: 200
+view_distance: 2
+sim_distance: 2
+seed: auth
+xmx: 640M
+softmax: 192M
+level_type: flat
+generator_settings: '{"layers":[{"block":"air","height":1}],"biome":"minecraft:the_void"}'
+motd: kimlik dogrulama    # MOTD açıklaması — renk gradient.py'den

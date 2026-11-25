@@ -1,0 +1,43 @@
+# ============================================================================
+#  EssentialsXChat — chat formatı (tag'ler burada görünür)
+# ============================================================================
+#  Renkler `scripts/gradient.py` tarafından üretilir (GRADIENT blokları).
+#  Hex desteği: EssentialsX 2.18+  →  &#rrggbb
+#  Elle renk yazma — `python3 scripts/gradient.py --apply` çalıştır.
+#
+#  Örnek çıktı:  [KURUCU] Ahmet » merhaba
+
+chat:
+  format: '{DISPLAYNAME} §8» §f{MESSAGE}'
+
+  # Grup bazlı formatlar
+  group-formats:
+    # >>> GRADIENT:BEGIN chat.kurucu
+    kurucu: '&l&#ff2d55K&#ff4d4cU&#ff6243R&#ff8848U&#ffb158C&#ffd166U&r§f{DISPLAYNAME} §8» §f{MESSAGE}'
+    # <<< GRADIENT:END chat.kurucu
+    # >>> GRADIENT:BEGIN chat.admin
+    admin: '&l&#ff4d4dA&#ff6149D&#ff7146M&#ff7e41I&#ff8a3dN&r§f{DISPLAYNAME} §8» §f{MESSAGE}'
+    # <<< GRADIENT:END chat.admin
+    # >>> GRADIENT:BEGIN chat.mod
+    mod: '&l&#4d9fffM&#5fc7ffO&#6ee7ffD&r§f{DISPLAYNAME} §8» §f{MESSAGE}'
+    # <<< GRADIENT:END chat.mod
+    # >>> GRADIENT:BEGIN chat.vip
+    vip: '&l&#ffc93cV&#ffda7dI&#ffe9a3P&r§f{DISPLAYNAME} §8» §f{MESSAGE}'
+    # <<< GRADIENT:END chat.vip
+    oyuncu: '§7{DISPLAYNAME} §8» §f{MESSAGE}'
+    # >>> GRADIENT:BEGIN chat.bot
+    bot: '&l&#00d4a0B&#36dcb1O&#4de3c0T&r§f{DISPLAYNAME} §8» §f{MESSAGE}'
+    # <<< GRADIENT:END chat.bot
+
+  # İsim üstünde de aynı tag görünsün (TAB ile aynı kaynak: LuckPerms)
+  add-format-to-nametag: true
+
+  # Küfür filtresi kapalı: Türkçe'de yanlış pozitif çok, moderasyon insanda
+  filter:
+    enabled: false
+
+messages:
+  no-permission: '§cBunun icin yetkin yok.'
+  player-not-found: '§cOyuncu bulunamadi.'
+  muted: '§eSusturuldun. Sebep: kural ihlali.'
+  not-muted: '§7Susturman yok.'
