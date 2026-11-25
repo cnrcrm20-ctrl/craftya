@@ -96,6 +96,39 @@ Bir daha "çalışmayan APK" yayınlanmaması için her derlemede:
 APK boyutu bu sürümlerde **272 KB → 407 KB**'a çıktı; aradaki fark, daha önce
 paketlenmeyen glue nesnesinin artık gerçekten içinde olduğunu gösteriyor.
 
+## Arayüz modernleştirme (derleme 26–30)
+
+Menüler ilk hâlinde düz siyah paneller, kalın şeritler ve blok piksel yazıyla
+"BIOS ekranı" gibi duruyordu. Yapılanlar:
+
+| Alan | Önce | Sonra |
+|---|---|---|
+| Panel | düz siyah dikdörtgen | SDF tabanlı yuvarlatılmış köşe + gradyan + gölge |
+| Menü kartı | keskin şerit | gradyanlı cam kart, seçilide sol vurgu hapı |
+| Yazı | 5×7 blok piksel | 3× çözünürlüklü atlas, GL_LINEAR yumuşatma, oransal genişlik |
+| Can/açlık | 10 ayrı kare kutucuk | iki yuvarlatılmış gradyan bar |
+| Sıcak bar | keskin kutular | yuvarlak yuvalar, seçilide hâle + nabız göstergesi |
+| Envanter | keskin ızgara | yuvarlatılmış gradyan yuvalar, panel içinde |
+| Klavye | keskin tuşlar, yarı saydam | gradyan tuşlar, opak panel, tüm satırlar sığıyor |
+| Sohbet | siyah şeritler | cam balonlar + sol renk şeridi |
+
+Teknik ayrıntılar:
+
+- **SDF shader** (`guiFS`): `min(max(qx,qy),0)+length(max(q,0))-r`, alfa
+  `1-smoothstep(-0.75,0.75,d)` → kenarlarda 1 px yumuşak geçiş.
+- **Font atlası**: hücre 17×23 (5×7 glif × 3 ölçek + 1 px şeffaf kenar).
+  Şeffaf kenar, `GL_LINEAR` filtrenin komşu gliften örnek almasını engelliyor.
+- **`font_metrics.hpp`**: 95 girişli oransal genişlik tablosu glif tablosundan
+  otomatik üretiliyor; `glyphUVClip` yalnız gerçek glif genişliğini örnekliyor.
+- **Yerleşim korundu**: glif yüksekliği `14*scale` ile eski metrikle birebir
+  aynı, böylece HUD öğeleri ekran dışına taşmıyor (regresyon testi bunu
+  denetliyor: 336/0).
+
+Bu turda düzeltilen gerçek hatalar: `y/g/p/q/j` alt uzantısının taban
+çizgisinin üstünde kalması, menü etiketlerinin 8 px yukarı kayması, envanter
+ızgarasının 4. satırının panel dışına taşması, sohbet klavyesinde boşluk
+tuşunun ekran dışında kalması ve altındaki HUD düğmelerinin sızması.
+
 ## Bilinen sınırlar
 
 - Yalnızca **arm64-v8a** (32-bit cihazlar desteklenmiyor).
