@@ -1,6 +1,6 @@
 # Craftya 3.0.0 — Sürüm Notları
 
-**APK:** `v3.0.0-b31` · 412.681 bayt · arm64-v8a · imzalı
+**APK:** `v3.0.0-b37` · ~414 KB · arm64-v8a · imzalı
 **Test:** 336 otomatik test / 0 hata
 **Arayüz:** modern (SDF yuvarlak köşe + gradyan + anti-aliased yazı)
 **Motor:** 457 içerik (311 blok + 37 canlı + 109 eşya), 130 üretim tarifi
@@ -129,6 +129,35 @@ Bu turda düzeltilen gerçek hatalar: `y/g/p/q/j` alt uzantısının taban
 çizgisinin üstünde kalması, menü etiketlerinin 8 px yukarı kayması, envanter
 ızgarasının 4. satırının panel dışına taşması, sohbet klavyesinde boşluk
 tuşunun ekran dışında kalması ve altındaki HUD düğmelerinin sızması.
+
+## Sunucu merkezli menü (derleme 37)
+
+Kullanıcı haklıydı: oyun bir **sunucu oyunu** olacaksa menüde "Tek Oyunculu"
+diyerek başlamak yanlıştı. Menü baştan yazıldı.
+
+**Ana menü artık:**
+
+| Öğe | Açıklama |
+|---|---|
+| Sunucuya Gir | en kalabalık dünya, canlı oyuncu sayısı + "canli" hapı |
+| Sunucular | lobi listesi (gerçek mod listesi, doluluk oranlarıyla) |
+| Karakter | görünüm / isim |
+| Ayarlar | grafik / ses / kontrol |
+
+**Sunucu listesi** (eski "mod paneli") artık gerçek bir lobi gibi görünüyor:
+her satırda yuvarlak ikon, canlı yeşil nokta, `8/10` doluluk hapı, bölüm
+başlığı ve "5v5 savaş · 8/10 oyuncu" alt etiketi.
+
+**Görsel dil:** çok katmanlı gradyan arka plan, üstte sıcak ışık hâlesi,
+gölgeli cam panel, yuvarlatılmış gradyan kartlar, sol vurgu hapı, yuvarlak
+ikon rozetleri, sağda canlı nokta.
+
+**Ölçü sistemi:** başlık bloğu ve kart metinleri artık sabit piksel değil,
+satır yüksekliğine göre ölçekleniyor. Bu, farklı ekran oranlarında (telefon
+yatay/dikey) taşmayı bitirdi — ilk denemede başlık kartlara giriyordu.
+
+`simulateLobbyOnline()`: sunucu yanıtı gelmeden menü "sunucu araniyor..." da
+kalmıyor; iyimser varsayılanla canlı görünüyor.
 
 ## Bilinen sınırlar
 
