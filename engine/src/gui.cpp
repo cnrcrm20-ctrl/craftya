@@ -576,9 +576,14 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
     int n = static_cast<int>(current_.items.size());
     float ph;
     if (current_.id == MenuId::Inventory || current_.id == MenuId::Crafting) {
-        float availW = pw - 56.f;
+        // Izgara panelin DIŞINA taşmamalı: yuva boyu hem genişliğe hem
+        // kalan yüksekliğe göre sınırlanıyor (telefonda 4 satır kesiliyordu).
+        const float availW = pw - 56.f;
         float slot = std::min((availW - 8.f * 8.f) / 9.f, screenH * 0.15f);
-        ph = 130.f + 4.f * (slot + 8.f) + 36.f;
+        const float maxPh = screenH * 0.92f;
+        const float slotByH = (maxPh - 108.f - 40.f) / 4.f - 8.f;
+        slot = std::max(20.f, std::min(slot, slotByH));
+        ph = 108.f + 4.f * (slot + 8.f) + 40.f;
     } else {
         ph = 140.f + n * (rowH + 12.f) + 40.f;
     }
@@ -627,22 +632,22 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
         // ince iç kenar (cam çerçeve)
         out.roundRect(Rect{r.x, r.y, r.w, 1.5f}, kStroke, 0.75f);
 
-        // Dikey hizalama: gerçek glif yüksekliği ≈ scale*22 px.
-        // Alt etiket varsa iki satır, yoksa tek satır ortalanır.
+        // Dikey hizalama: metin bloğu kartın TAM ortasına oturur.
+        // Gerçek glif yüksekliği = 14 * scale (cihazdaki metrikle aynı);
+        // önceden 22 varsayıldığı için etiket 8 px yukarı kayıyordu.
         const bool hasSub = !current_.items[i].sublabel.empty();
         const float labelScale = 1.15f;
-        const float labelH = labelScale * 22.f;
-        if (hasSub) {
-            out.text(current_.items[i].label, r.x + 26.f,
-                     r.y + r.h * 0.5f - labelH - 1.f, labelScale,
-                     current_.items[i].enabled ? kWhite : Color{0.45f,0.48f,0.54f,1});
-            out.text(current_.items[i].sublabel, r.x + 26.f, r.y + r.h * 0.5f + 6.f,
-                     0.80f, kTextDim);
-        } else {
-            out.text(current_.items[i].label, r.x + 26.f,
-                     r.y + r.h * 0.5f - labelH * 0.5f, labelScale,
-                     current_.items[i].enabled ? kWhite : Color{0.45f,0.48f,0.54f,1});
-        }
+        const float labelH = 14.f * labelScale;
+        const float subScale = 0.80f;
+        const float subH = 14.f * subScale;
+        const float gap = hasSub ? 8.f : 0.f;
+        const float blockH = labelH + gap + (hasSub ? subH : 0.f);
+        const float ty = r.y + (r.h - blockH) * 0.5f;
+        out.text(current_.items[i].label, r.x + 26.f, ty, labelScale,
+                 current_.items[i].enabled ? kWhite : Color{0.45f, 0.48f, 0.54f, 1});
+        if (hasSub)
+            out.text(current_.items[i].sublabel, r.x + 26.f, ty + labelH + gap,
+                     subScale, kTextDim);
         itemRects_.push_back(r);
     }
     // ---- envanter / üretim ızgarası ----
@@ -651,6 +656,7 @@ void MenuSystem::build(DrawList& out, float screenW, float screenH) {
         int cols = 9;
         float availW = pw - 56.f;
         float gs = std::min((availW - 8.f * 8.f) / 9.f, screenH * 0.15f);
+        gs = std::max(20.f, std::min(gs, (screenH * 0.92f - 148.f) / 4.f - 8.f));
         float gw = cols * (gs + 8.f) - 8.f;
         float gx = px + (pw - gw) * 0.5f;
         float gy = py + 108.f;
