@@ -82,8 +82,11 @@ jobs:
           done
           # her odanın farklı RCON portu
           ports=$(grep -h "^rcon.port=" runtime/rooms/*/server.properties | sort -u | wc -l)
-          test "$ports" -eq 6 || { echo "RCON portları çakışıyor ($ports farklı)"; exit 1; }
-          echo "6 oda config'i üretildi, RCON portları ayrık"
+          rooms=$(ls -d runtime/rooms/*/ | wc -l)
+          test "$ports" -eq "$rooms" || { echo "RCON portlari cakisiyor ($ports farkli, $rooms oda)"; exit 1; }
+          # auth odasi da var -> 7 oda (6 oyun + limbo)
+          test "$rooms" -eq 7 || { echo "oda sayisi 7 degil ($rooms)"; exit 1; }
+          echo "7 oda config uretildi (6 oyun + auth), RCON portlari ayrik"
 
       - name: Compose tutarlılığı
         run: |
@@ -239,24 +242,4 @@ jobs:
           PY
 
       - name: Manifest kontrolü
-        run: |
-          node -e "
-          const m = require('./plugins/manifest.json');
-          const slugs = m.plugins.map(p => p.slug);
-          const dup = slugs.filter((s,i) => slugs.indexOf(s) !== i);
-          if (dup.length) { console.error('tekrarlanan slug:', dup); process.exit(1); }
-          const fs = require('fs');
-          const rooms = new Set([...fs.readdirSync('config/rooms'), 'all', 'proxy']);
-          for (const p of m.plugins) {
-            for (const r of p.rooms) {
-              if (!rooms.has(r)) { console.error(`${p.slug}: olmayan oda '${r}'`); process.exit(1); }
-            }
-          }
-          const g = m.plugins.find(p => p.slug === 'geyser');
-          if (!g || JSON.stringify(g.rooms) !== '["proxy"]') {
-            console.error('Geyser rooms=["proxy"] olmali (backend degil)'); process.exit(1);
-          }
-          if (g.platform !== 'velocity') { console.error('Geyser platform=velocity olmali'); process.exit(1); }
-          const mandatory = m.plugins.filter(p => p.mandatory).length;
-          console.log(\`manifest ok: \${m.plugins.length} plugin (\${mandatory} zorunlu), \${m.core.length} çekirdek\`);
-          "
+        run: node scripts/check-manifest.cjs
