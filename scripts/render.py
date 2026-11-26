@@ -330,6 +330,8 @@ def main() -> int:
         # limbo/auth odası: .env'de yoksa CI'da oda hiç render edilmiyordu
         # → AUTH_MEM üretilmiyordu → 'docker compose up' patlıyordu.
         "PORT_AUTH": "25572",
+        # Velocity TOML'de shell varsayılan sözdizimi geçersiz; düz sayı gerekir.
+        "MAX_PLAYERS": "20",
     }
     for k, v in defaults.items():
         env.setdefault(k, v)

@@ -74,6 +74,16 @@ jobs:
           cp .env.example .env
           python3 scripts/render.py
           test -f runtime/velocity/velocity.toml || { echo "velocity.toml üretilmedi"; exit 1; }
+          python - <<'PY'
+          import pathlib, tomllib
+          path = pathlib.Path('runtime/velocity/velocity.toml')
+          text = path.read_text()
+          assert '${' not in text, 'velocity.toml içinde çözülmemiş yer tutucu var'
+          cfg = tomllib.loads(text)
+          assert isinstance(cfg['show-max-players'], int), 'show-max-players tam sayı olmalı'
+          assert cfg['show-max-players'] == 20, 'MAX_PLAYERS varsayılanı 20 olmalı'
+          print('✓ velocity.toml geçerli TOML; show-max-players integer')
+          PY
           for r in lobby survival skyblock bedwars duello parkur; do
             test -f "runtime/rooms/$r/server.properties" || { echo "$r config üretilmedi"; exit 1; }
             grep -q "server-port=" "runtime/rooms/$r/server.properties" || exit 1

@@ -7,7 +7,7 @@ bind = "0.0.0.0:${PORT_VELOCITY}"
 # >>> GRADIENT:BEGIN proxy.motd
 motd = "<gradient:#7ef29d:#49c6ff>CRAFTYA</gradient><dark_gray> | <gray>sunucu dunyasi"
 # <<< GRADIENT:END proxy.motd
-show-max-players = ${MAX_PLAYERS:-20}
+show-max-players = ${MAX_PLAYERS}
 online-mode = false
 force-key-authentication = false
 prevent-client-proxy-connections = false
