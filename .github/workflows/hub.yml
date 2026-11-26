@@ -247,22 +247,22 @@ jobs:
         env:
           PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
         run: |
-          # playit ajanı: sabit adres (secret sabit) → mc.craftya.dev SRV hedefi
-          # playit ajanı Bedrock UDP'sini de taşıyabilmeli. NetherNet sinyal
-          # için TCP de istiyor; ajan TCP+UDP açmıyorsa Geyser'i raknet'e al.
-          curl -sSL https://playit.gg/download/linux -o /tmp/playit && chmod +x /tmp/playit
-          nohup /tmp/playit --secret "$PLAYIT_SECRET" > logs/playit.log 2>&1 &
+          # Playit paneli yalnızca desteklenen güncel agent sürümünü kabul eder.
+          # Resmî Docker agent'ını host network ile çalıştır: SECRET_KEY gizli env'den.
+          docker rm -f playit-agent >/dev/null 2>&1 || true
+          docker pull ghcr.io/playit-cloud/playit-agent:1.0
+          docker run -d --name playit-agent --network host \
+            -e "SECRET_KEY=$PLAYIT_SECRET" \
+            ghcr.io/playit-cloud/playit-agent:1.0
           sleep 8
-          echo "--- playit ---"
-          grep -iE 'tunnel|address|error|secret' logs/playit.log | head -20 || true
-          # Bedrock tüneli gerçekten ayakta mı: kısa sağlık kaydı
-          for i in $(seq 1 6); do
-            if grep -qiE '19132|bedrock' logs/playit.log; then
-              echo "✓ bedrock tüneli göründü"; break
-            fi
-            [ "$i" = 6 ] && echo "! bedrock tüneli log'da yok — panelde 'Minecraft Bedrock' tüneli ekli mi?"
-            sleep 5
-          done
+          docker inspect -f 'playit container={{.State.Status}}' playit-agent
+          docker logs --tail=100 playit-agent > logs/playit.log 2>&1 || true
+          echo "--- playit agent logs ---"
+          grep -iE 'tunnel|address|error|agent|connected' logs/playit.log | head -30 || true
+          # Bedrock tüneli varsa log'da görünür; Java agent bağlantısını da kaydet.
+          grep -qiE '19132|bedrock' logs/playit.log \
+            && echo "✓ bedrock tüneli log'da göründü" \
+            || echo "! Bedrock tüneli henüz görünmüyor (panelde ayrıca oluşturulmalı)"
 
       # ---------------------------------------------------------------- çalışma
       - name: Sunucu çalışıyor (devir zamanına kadar)
@@ -333,7 +333,9 @@ jobs:
 
       - name: Durdur
         if: always()
-        run: docker compose -f docker-compose.hub.yml down || true
+        run: |
+          docker rm -f playit-agent >/dev/null 2>&1 || true
+          docker compose -f docker-compose.hub.yml down || true
 
       # ---------------------------------------------------------------- zincir
       - name: Sonraki run'ı kuyruğa at (kesintisiz zincir)
