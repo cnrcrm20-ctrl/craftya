@@ -96,9 +96,23 @@ jobs:
       - name: Compose tutarlılığı
         run: |
           python - <<'PY'
-          import yaml
+          import yaml, json, pathlib, re
           d = yaml.safe_load(open('docker-compose.hub.yml'))
           s = d['services']
+          # Workflow, .env.example, plugin manifest ve Java imajı aynı sürümde olmalı.
+          hub = pathlib.Path('.github/workflows/hub.yml').read_text()
+          wf_version = re.search(r"^  MC_VERSION:\s*['\"]?([^'\"\s]+)", hub, re.M).group(1)
+          env_text = pathlib.Path('.env.example').read_text()
+          env_version = re.search(r'^MC_VERSION=(\S+)', env_text, re.M).group(1)
+          manifest_version = json.loads(pathlib.Path('plugins/manifest.json').read_text())['game_version']
+          assert wf_version == env_version == manifest_version, \
+              f'versiyon ayrışması: workflow={wf_version}, .env={env_version}, manifest={manifest_version}'
+          java = 'java25' if wf_version.startswith('26.') else 'java21' if wf_version.startswith('1.21.') else None
+          assert java, f'Java sürümü tanımlı değil: Minecraft {wf_version}'
+          for key in ('MC_IMAGE','PROXY_IMAGE'):
+              image = re.search(rf'^{key}=(\S+)', env_text, re.M).group(1)
+              assert image.endswith(java), f'{key}={image}, Minecraft {wf_version} için {java} olmalı'
+          print(f'✓ sürüm tutarlı: Minecraft {wf_version} + {java}')
           need = {'velocity','auth','lobby','survival','skyblock','bedwars','duello','parkur'}
           assert need <= set(s), f'eksik servis: {need - set(s)}'
           # SADECE velocity dışarıya açık: 25565/tcp + 19132/tcp+udp (Geyser)

@@ -45,7 +45,7 @@ concurrency:
   cancel-in-progress: false   # devir zinciri: eski run bitmeden yeni başlamasın
 
 env:
-  MC_VERSION: '1.21.4'
+  MC_VERSION: '26.3'
   RUN_MINUTES: 340            # 5s40dk çalış, sonra devret (6 saat = 360 dk)
   NODE_VERSION: '20'
 
