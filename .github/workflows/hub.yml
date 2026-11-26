@@ -158,9 +158,19 @@ jobs:
             echo "  tur $i: $ready/7 oda açık"
             sleep 5
           done
-          # proxy
+          if [ "$ready" -lt 7 ]; then
+            echo "HATA: yalnızca $ready/7 oda portu açıldı; container çıkışları:"
+            docker compose -f docker-compose.hub.yml ps -a
+            for r in auth lobby survival skyblock bedwars duello parkur velocity; do
+              echo "--- $r ---"
+              docker logs --tail=80 "hub-$r" 2>&1 || true
+            done
+            exit 1
+          fi
+          # Proxy de zorunlu: tünel yalnızca Velocity'ye bağlanır.
           timeout 30 bash -c 'until echo > /dev/tcp/127.0.0.1/25565 2>/dev/null; do sleep 2; done' \
-            && echo "velocity hazır" || echo "velocity uyarı: açılmadı"
+            || { echo "HATA: Velocity portu 25565 açılmadı"; docker logs --tail=100 hub-velocity || true; exit 1; }
+          echo "7 oda + Velocity hazır"
 
       - name: Proxy pluginleri yüklendi mi (/hub / Geyser / LibreLogin)
         run: |
@@ -284,20 +294,25 @@ jobs:
             echo "TEST MODU: $RUN_MINUTES dk çalışıp duracak, devir zinciri kurulmayacak"
           fi
           echo "başlangıç: $(date -u +%H:%M:%S)"
-          # governor arka planda
-          nohup ./scripts/mem-governor.sh > logs/governor.out 2>&1 &
-          # 10 dk'da bir sağlık kaydı
+          # Governor geçici kapalı: ilk açılışta cgroup küçültmesinin oda süreçlerini
+          # düşürüp düşürmediğini ayırıyoruz. Sağlık döngüsü her oda için log toplar.
+          echo "Bellek governor bu tanı çalıştırmasında kapalı"
           END=$(( $(date +%s) + RUN_MINUTES * 60 ))
           while [ "$(date +%s)" -lt "$END" ]; do
             echo "--- $(date -u +%H:%M:%S) ---"
-            for r in lobby survival skyblock bedwars duello parkur; do
+            for r in velocity auth lobby survival skyblock bedwars duello parkur; do
               st=$(docker inspect -f '{{.State.Status}}' "hub-$r" 2>/dev/null || echo yok)
               mem=$(docker stats --no-stream --format '{{.MemUsage}}' "hub-$r" 2>/dev/null || echo -)
               printf '  %-10s %-8s %s\n' "$r" "$st" "$mem"
+              if [ "$st" != running ]; then
+                echo "HATA: hub-$r durdu"
+                docker inspect -f 'exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}' "hub-$r" || true
+                docker logs --tail=120 "hub-$r" 2>&1 || true
+                exit 1
+              fi
             done
-            sleep 600
+            sleep 60
           done
-          tail -30 logs/mem-governor.log 2>/dev/null || true
 
       # ---------------------------------------------------------------- devir
       - name: Duyuru (bakım)
