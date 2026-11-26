@@ -125,6 +125,12 @@ jobs:
           print(f'✓ sürüm tutarlı: Minecraft {wf_version} + {java}')
           need = {'velocity','auth','lobby','survival','skyblock','bedwars','duello','parkur'}
           assert need <= set(s), f'eksik servis: {need - set(s)}'
+          # Render edilmiş 0600 config'leri container okuyabilsin; izinleri açmak yerine UID/GID eşle.
+          room_env = s['lobby']['environment']
+          assert room_env.get('UID') == '${HOST_UID:-1000}', 'oda UID runner ile eşleşmeli'
+          assert room_env.get('GID') == '${HOST_GID:-1000}', 'oda GID runner ile eşleşmeli'
+          assert 'HOST_UID=$(id -u)' in hub and 'HOST_GID=$(id -g)' in hub, \
+              'workflow, host UID/GID değerlerini sonraki adımlara aktarmalı'
           # SADECE velocity dışarıya açık: 25565/tcp + 19132/tcp+udp (Geyser)
           for name, svc in s.items():
               for p in svc.get('ports', []):

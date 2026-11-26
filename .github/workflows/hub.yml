@@ -87,6 +87,9 @@ jobs:
           python3 scripts/gradient.py --apply
           # sırlar boşsa render.py üretir (run içinde yaşar) — sunucu yine çalışır
           python3 scripts/render.py
+          # Render dosyaları 0600: container kullanıcısını runner ile eşleştir.
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
           # compose, sırları ve bellek limitlerini .env'den okur.
           # Sadece rooms.env eklemek YETMİYOR: VELOCITY_SECRET / RCON_PASSWORD
           # da .env'de olmalı, yoksa 'docker compose up' ${VAR:?} yüzünden patlar.
@@ -332,7 +335,11 @@ jobs:
           ./scripts/world-sync.sh save 2>&1 | tee logs/world-save.log || true
           echo "--- kalıcı dünya dizinleri ---" | tee logs/world-data.log
           find runtime/data -maxdepth 3 -type d -print | tee -a logs/world-data.log
-          ./scripts/world-sync.sh upload 2>&1 | tee logs/world-upload.log
+          if find runtime/data -mindepth 2 -maxdepth 2 -type d -name world -print -quit | grep -q .; then
+            ./scripts/world-sync.sh upload 2>&1 | tee logs/world-upload.log
+          else
+            echo "::warning::Henüz dünya klasörü yok; ilk sunucu açılışı tamamlanmadığı için arşiv atlandı."
+          fi
 
       - name: Dünyayı artifact olarak yükle
         if: always()

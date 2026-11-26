@@ -24,6 +24,10 @@ x-room: &room
     EULA: "TRUE"
     TYPE: "PAPER"
     VERSION: "${MC_VERSION:-26.3}"
+    # Üretilen config'ler 0600 kalır; sır izinlerini açmamak için
+    # container kullanıcısını GitHub runner UID/GID'siyle eşleştir.
+    UID: "${HOST_UID:-1000}"
+    GID: "${HOST_GID:-1000}"
     ONLINE_MODE: "FALSE"
     PAPER_VELOCITY_SUPPORT: "true"
     VELOCITY_SECRET: "${VELOCITY_SECRET:?VELOCITY_SECRET gerekli (render.py üretir)}"
