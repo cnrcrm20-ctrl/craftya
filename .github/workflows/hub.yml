@@ -141,11 +141,16 @@ jobs:
                   if attempt < 12:
                       time.sleep(5)
           if status is None:
-              raise SystemExit(f'Java Minecraft status alınamadı: {last_error}')
+              message = f'Java Minecraft status alınamadı: {host}:{port}; son hata: {last_error}'
+              annotation = message.replace('%', '%25').replace(chr(13), '%0D').replace(chr(10), '%0A')
+              print(f'::error title=MangoHost Java testi::{annotation}')
+              raise SystemExit(message)
 
           version = status.get('version', {}).get('name', 'bilinmiyor')
           players = status.get('players', {})
-          print(f'✓ Java yanıtı: sürüm={version}, oyuncu={players.get("online", "?")}/{players.get("max", "?")}')
+          detail = f'Java yanıtı: {host}:{port}, sürüm={version}, oyuncu={players.get("online", "?")}/{players.get("max", "?")}'
+          print('✓ ' + detail)
+          print('::notice title=MangoHost Java testi::' + detail.replace('%', '%25').replace(chr(13), '%0D').replace(chr(10), '%0A'))
 
           # Geyser/RakNet UDP ping: geçerli pong gelirse Bedrock UDP kesin yanıtlıyor.
           magic = bytes.fromhex('00ffff00fefefefefdfdfdfd12345678')
@@ -156,12 +161,17 @@ jobs:
                   udp.sendto(ping, (host, port))
                   reply, peer = udp.recvfrom(2048)
               if reply and reply[0] == 0x1c:
-                  print(f'✓ Bedrock/RakNet UDP pong: {peer[0]}:{peer[1]}')
+                  message = f'Bedrock/RakNet UDP pong: {peer[0]}:{peer[1]}'
+                  print('✓ ' + message)
+                  print('::notice title=MangoHost Bedrock testi::' + message)
               else:
-                  print(f'! UDP yanıtı geldi ama RakNet pong değil (ID={reply[0] if reply else "boş"})')
+                  message = f'UDP yanıtı RakNet pong değil (ID={reply[0] if reply else "boş"})'
+                  print('! ' + message)
+                  print('::warning title=MangoHost Bedrock testi::' + message)
           except OSError as exc:
-              print(f'! Bedrock UDP yanıtı alınamadı: {exc}')
-              print('  Bu sonuç UDP eşlemesinin kapalı olduğunu gösterebilir; TCP testi başarılı.')
+              message = f'Bedrock UDP yanıtı alınamadı: {exc}; TCP testi başarılı.'
+              print('! ' + message)
+              print('::warning title=MangoHost Bedrock testi::' + message)
           PY
 
   hub:
