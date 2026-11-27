@@ -18,13 +18,21 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'start = sunucuyu ayağa kaldır | chain = sadece devir'
+        description: 'start = sunucuyu ayağa kaldır | chain = devir | mangohost-test = bağlantıyı sına'
         required: false
         default: 'start'
       run_minutes:
         description: 'Bu run kaç dakika çalışsın (boş = 340). Test için 8 yaz.'
         required: false
         default: ''
+      target_host:
+        description: 'MangoHost bağlantı testi: tahsisli host'
+        required: false
+        default: 'fr-4.mangoohost.org'
+      target_port:
+        description: 'MangoHost bağlantı testi: ana oyun portu'
+        required: false
+        default: '21168'
   push:
     # Config/render değişiklikleri yeni deploy başlatır. Workflow-only değişiklikleri
     # elle workflow_dispatch ile test ediyoruz (yanlışlıkla uzun run açılmasın).
@@ -50,7 +58,114 @@ env:
   NODE_VERSION: '20'
 
 jobs:
+  # Hafif dış bağlantı testi — eski Hub işini/odaları başlatmadan çalışır.
+  mangohost-test:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'mangohost-test' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: MangoHost Java ve Bedrock portunu sına
+        env:
+          TARGET_HOST: ${{ inputs.target_host }}
+          TARGET_PORT: ${{ inputs.target_port }}
+          VIRTUAL_HOST: craftya.mangoohost.live
+        run: |
+          python3 - <<'PY'
+          import json, os, socket, struct, time
+
+          host = os.environ['TARGET_HOST'].strip()
+          port = int(os.environ['TARGET_PORT'])
+          virtual_host = os.environ['VIRTUAL_HOST']
+
+          def varint(n):
+              if n < 0:
+                  n &= 0xffffffff
+              out = bytearray()
+              while True:
+                  b = n & 0x7f
+                  n >>= 7
+                  if n:
+                      b |= 0x80
+                  out.append(b)
+                  if not n:
+                      return bytes(out)
+
+          def read_varint(sock):
+              value = shift = 0
+              while shift < 35:
+                  b = sock.recv(1)
+                  if not b:
+                      raise ConnectionError('Minecraft status yanıtı erken kapandı')
+                  value |= (b[0] & 0x7f) << shift
+                  if not b[0] & 0x80:
+                      return value
+                  shift += 7
+              raise ValueError('Bozuk VarInt')
+
+          def recv_exact(sock, count):
+              data = bytearray()
+              while len(data) < count:
+                  part = sock.recv(count - len(data))
+                  if not part:
+                      raise ConnectionError('Minecraft status paketi eksik geldi')
+                  data.extend(part)
+              return bytes(data)
+
+          def java_status():
+              name = virtual_host.encode()
+              handshake = (b'\x00' + varint(0) + varint(len(name)) + name
+                           + struct.pack('>H', port) + varint(1))
+              with socket.create_connection((host, port), timeout=5) as sock:
+                  sock.settimeout(5)
+                  sock.sendall(varint(len(handshake)) + handshake)
+                  sock.sendall(b'\x01\x00')
+                  packet_len = read_varint(sock)
+                  packet_id = read_varint(sock)
+                  if packet_id != 0:
+                      raise ConnectionError(f'Beklenmeyen status paketi: {packet_id}')
+                  text_len = read_varint(sock)
+                  if text_len > packet_len:
+                      raise ConnectionError('Status yanıt uzunluğu tutarsız')
+                  return json.loads(recv_exact(sock, text_len).decode('utf-8'))
+
+          print(f'Java TCP/status: {host}:{port} (hostname={virtual_host})')
+          status = None
+          last_error = None
+          for attempt in range(1, 13):
+              try:
+                  status = java_status()
+                  break
+              except (OSError, ValueError, ConnectionError, json.JSONDecodeError) as exc:
+                  last_error = exc
+                  print(f'  deneme {attempt}/12: {exc}')
+                  if attempt < 12:
+                      time.sleep(5)
+          if status is None:
+              raise SystemExit(f'Java Minecraft status alınamadı: {last_error}')
+
+          version = status.get('version', {}).get('name', 'bilinmiyor')
+          players = status.get('players', {})
+          print(f'✓ Java yanıtı: sürüm={version}, oyuncu={players.get("online", "?")}/{players.get("max", "?")}')
+
+          # Geyser/RakNet UDP ping: geçerli pong gelirse Bedrock UDP kesin yanıtlıyor.
+          magic = bytes.fromhex('00ffff00fefefefefdfdfdfd12345678')
+          ping = b'\x01' + struct.pack('>q', int(time.time() * 1000)) + magic + os.urandom(8)
+          try:
+              with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+                  udp.settimeout(5)
+                  udp.sendto(ping, (host, port))
+                  reply, peer = udp.recvfrom(2048)
+              if reply and reply[0] == 0x1c:
+                  print(f'✓ Bedrock/RakNet UDP pong: {peer[0]}:{peer[1]}')
+              else:
+                  print(f'! UDP yanıtı geldi ama RakNet pong değil (ID={reply[0] if reply else "boş"})')
+          except OSError as exc:
+              print(f'! Bedrock UDP yanıtı alınamadı: {exc}')
+              print('  Bu sonuç UDP eşlemesinin kapalı olduğunu gösterebilir; TCP testi başarılı.')
+          PY
+
   hub:
+    if: ${{ inputs.mode != 'mangohost-test' }}
     runs-on: ubuntu-latest
     timeout-minutes: 355
 
