@@ -1,0 +1,66 @@
+# ============================================================================
+#  LibreLogin — proxy'de TEK kimlik doğrulama (AuthMe'nin yerini aldı)
+# ============================================================================
+#  Neden değişti:
+#   • AuthMe oda başına kurulurdu → 6 ayrı oturum, her oda geçişinde şifre
+#   • AuthMe SQLite her odada ayrı dosya → oyuncu "kayıtlı değil" görünüyordu
+#   • Bedrock oyuncusu (Floodgate) şifre girmek zorundaydı
+#
+#  Şimdi: proxy'de tek giriş. Bir kez /login → tüm odalarda oturum geçerli.
+#  Bedrock oyuncusu Floodgate ile otomatik girer, şifre sormaz.
+#
+#  Bu dosya proxy'nin plugin dizinine gider (runtime/proxy-plugins/LibreLogin).
+
+# ---- limbo (kimlik doğrulama beklerken oyuncunun durduğu oda) --------------
+# Oyun dünyası değil: boş dünya, oyuncu burada hiçbir şey yapamaz.
+limbo:
+  - auth
+
+# ---- giriş sonrası gidilecek odalar (sırayla, en boş olan seçilir) ---------
+lobby:
+  root:
+    - lobby
+
+# ---- veritabanı ------------------------------------------------------------
+# SQLite limbo sunucusunda durur (tek yer, tüm ağ aynı dosyayı görür).
+# Çok proxy'ye çıkarsak MySQL/PostgreSQL'e geçilir.
+database:
+  type: librelogin-sqlite
+
+# ---- güvenlik --------------------------------------------------------------
+# Argon2id: 2026'da doğru varsayılan (BCrypt'ten daha dayanıklı)
+default-crypto-provider: Argon-2ID
+
+# Oturum süresi: 30 gün. Aynı IP'den gelen oyuncu tekrar şifre yazmaz.
+# 0 yaparsan her girişte sorar — istemiyoruz.
+session-timeout: 2592000
+
+# Giriş için verilen süre (saniye) — sonra atılır
+seconds-to-authorize: 60
+
+# Yanlış şifre hakkı — sonra kick
+max-login-attempts: 5
+login-security:
+  max-ip-login-attempts: 20
+
+# Kayıt olurken minimum şifre uzunluğu
+minimum-password-length: 6
+
+# IP'yi düz yazma (KVKK/GDPR): HMAC-SHA256 ile tuzlanır
+privacy:
+  ip-storage-mode: HASHED
+  auto-purge-inactive-days: 0
+
+# ---- Bedrock (Floodgate) --------------------------------------------------
+# Bedrock oyuncusu Java hesabı olmadan girer, şifre SORULMAZ.
+# Senin istediğin "her odada şifre sormasın" davranışının Bedrock tarafı.
+floodgate:
+  enabled: true
+
+# ---- 2FA (opsiyonel, oyuncu kendi açar) -----------------------------------
+totp:
+  enabled: true
+
+# ---- e-posta ile şifre sıfırlama (kapalı: SMTP ayarı gerekiyor) -----------
+mail:
+  enabled: false

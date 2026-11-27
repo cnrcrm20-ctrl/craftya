@@ -1,0 +1,11 @@
+# Çekirdek Parkuru — dev bloğun içinden geçen parkur. CPU ≈ 0.
+mode: adventure
+difficulty: peaceful
+max_players: 30
+view_distance: 5
+sim_distance: 3
+seed: parkur
+level_type: minecraft:flat
+xmx: 1024M
+softmax: 320M
+motd: cekirdek parkuru          # MOTD açıklaması — renk gradient.py'den

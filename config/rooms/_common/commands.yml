@@ -1,0 +1,23 @@
+# ============================================================================
+#  Craftya — komut kısayolları (6 odanın hepsine kurulur)
+# ============================================================================
+#  Neden burada: /hub ve /lobby proxy plugininden geliyor (velocity-hub-command).
+#  Ama /lobi ve /l gibi TÜRKÇE kısayolları o plugin tanımıyor.
+#  Bukkit'te "komutu yakala + başka komuta çevir" için bir plugin lazım →
+#  EssentialsX `aliases` özelliği, tam bunun için var.
+#
+#  Akış:  /lobi  →  (Essentials aliases)  →  /hub  →  (proxy)  →  çekirdek oda
+
+aliases:
+  # Türkçe ve kısa yollar — hepsi /hub'a gider
+  lobi:
+    - "hub"
+  l:
+    - "hub"
+  # İngilizce varyantlar da garanti olsun (proxy plugin kapalıysa diye değil,
+  # tutarlılık için: hepsi aynı komuta çıkar)
+  hub:
+    - "hub"
+  # /merkez: hub'ın Türkçe karşılığı
+  merkez:
+    - "hub"

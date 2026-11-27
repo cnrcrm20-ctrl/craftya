@@ -1,0 +1,504 @@
+name: Craftya Hub
+
+# ============================================================================
+#  6 saatlik devir döngüsü.
+#
+#  Neden: GitHub Actions işi en fazla 6 saat sürer. Sunucu bu süre sonunda
+#  yeniden başlar. Zincir kendini besler: her run, bitmeden bir sonrakini
+#  kuyruğa atar → kesintisiz devam.
+#
+#  Akış:
+#    05:50  duyuru (10 dk)   →  05:58 (2 dk)  →  05:59 kaydet+arşivle
+#    06:00  yeni run: arşivi indir → dünyaları aç → konteynerler → hazır
+#
+#  Kesinti hedefi: 25-35 sn. Oyuncu hiçbir şey kaybetmez (envanter/konum Paper'da).
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'start = sunucuyu ayağa kaldır | chain = devir | mangohost-test = bağlantıyı sına'
+        required: false
+        default: 'start'
+      run_minutes:
+        description: 'Bu run kaç dakika çalışsın (boş = 340). Test için 8 yaz.'
+        required: false
+        default: ''
+      target_host:
+        description: 'MangoHost bağlantı testi: tahsisli host'
+        required: false
+        default: 'fr-4.mangoohost.org'
+      target_port:
+        description: 'MangoHost bağlantı testi: ana oyun portu'
+        required: false
+        default: '21168'
+  push:
+    # Config/render değişiklikleri yeni deploy başlatır. Workflow-only değişiklikleri
+    # elle workflow_dispatch ile test ediyoruz (yanlışlıkla uzun run açılmasın).
+    paths:
+      - 'scripts/render.py'
+      - 'config/rooms/**'
+      - 'docker-compose.hub.yml'
+  schedule:
+    # Emniyet ağı: zincir bir şekilde koparsa 6 saatte bir yeniden başlat
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: read
+  actions: write          # sonraki run'ı tetiklemek ve artifact için
+
+concurrency:
+  group: craftya-hub
+  cancel-in-progress: false   # devir zinciri: eski run bitmeden yeni başlamasın
+
+env:
+  MC_VERSION: '26.3'
+  RUN_MINUTES: 340            # 5s40dk çalış, sonra devret (6 saat = 360 dk)
+  NODE_VERSION: '20'
+
+jobs:
+  # Hafif dış bağlantı testi — eski Hub işini/odaları başlatmadan çalışır.
+  mangohost-test:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'mangohost-test' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: MangoHost Java ve Bedrock portunu sına
+        env:
+          TARGET_HOST: ${{ inputs.target_host }}
+          TARGET_PORT: ${{ inputs.target_port }}
+          VIRTUAL_HOST: craftya.mangoohost.live
+        run: |
+          python3 - <<'PY'
+          import json, os, socket, struct, time
+
+          host = os.environ['TARGET_HOST'].strip()
+          port = int(os.environ['TARGET_PORT'])
+          virtual_host = os.environ['VIRTUAL_HOST']
+
+          def varint(n):
+              if n < 0:
+                  n &= 0xffffffff
+              out = bytearray()
+              while True:
+                  b = n & 0x7f
+                  n >>= 7
+                  if n:
+                      b |= 0x80
+                  out.append(b)
+                  if not n:
+                      return bytes(out)
+
+          def read_varint(sock):
+              value = shift = 0
+              while shift < 35:
+                  b = sock.recv(1)
+                  if not b:
+                      raise ConnectionError('Minecraft status yanıtı erken kapandı')
+                  value |= (b[0] & 0x7f) << shift
+                  if not b[0] & 0x80:
+                      return value
+                  shift += 7
+              raise ValueError('Bozuk VarInt')
+
+          def recv_exact(sock, count):
+              data = bytearray()
+              while len(data) < count:
+                  part = sock.recv(count - len(data))
+                  if not part:
+                      raise ConnectionError('Minecraft status paketi eksik geldi')
+                  data.extend(part)
+              return bytes(data)
+
+          def java_status():
+              name = virtual_host.encode()
+              handshake = (b'\x00' + varint(0) + varint(len(name)) + name
+                           + struct.pack('>H', port) + varint(1))
+              with socket.create_connection((host, port), timeout=5) as sock:
+                  sock.settimeout(5)
+                  sock.sendall(varint(len(handshake)) + handshake)
+                  sock.sendall(b'\x01\x00')
+                  packet_len = read_varint(sock)
+                  packet_id = read_varint(sock)
+                  if packet_id != 0:
+                      raise ConnectionError(f'Beklenmeyen status paketi: {packet_id}')
+                  text_len = read_varint(sock)
+                  if text_len > packet_len:
+                      raise ConnectionError('Status yanıt uzunluğu tutarsız')
+                  return json.loads(recv_exact(sock, text_len).decode('utf-8'))
+
+          print(f'Java TCP/status: {host}:{port} (hostname={virtual_host})')
+          status = None
+          last_error = None
+          for attempt in range(1, 13):
+              try:
+                  status = java_status()
+                  break
+              except (OSError, ValueError, ConnectionError, json.JSONDecodeError) as exc:
+                  last_error = exc
+                  print(f'  deneme {attempt}/12: {exc}')
+                  if attempt < 12:
+                      time.sleep(5)
+          if status is None:
+              message = f'Java Minecraft status alınamadı: {host}:{port}; son hata: {last_error}'
+              annotation = message.replace('%', '%25').replace(chr(13), '%0D').replace(chr(10), '%0A')
+              print(f'::error title=MangoHost Java testi::{annotation}')
+              raise SystemExit(message)
+
+          version = status.get('version', {}).get('name', 'bilinmiyor')
+          players = status.get('players', {})
+          detail = f'Java yanıtı: {host}:{port}, sürüm={version}, oyuncu={players.get("online", "?")}/{players.get("max", "?")}'
+          print('✓ ' + detail)
+          print('::notice title=MangoHost Java testi::' + detail.replace('%', '%25').replace(chr(13), '%0D').replace(chr(10), '%0A'))
+
+          # Geyser/RakNet UDP ping: geçerli pong gelirse Bedrock UDP kesin yanıtlıyor.
+          magic = bytes.fromhex('00ffff00fefefefefdfdfdfd12345678')
+          ping = b'\x01' + struct.pack('>q', int(time.time() * 1000)) + magic + os.urandom(8)
+          try:
+              with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+                  udp.settimeout(5)
+                  udp.sendto(ping, (host, port))
+                  reply, peer = udp.recvfrom(2048)
+              if reply and reply[0] == 0x1c:
+                  message = f'Bedrock/RakNet UDP pong: {peer[0]}:{peer[1]}'
+                  print('✓ ' + message)
+                  print('::notice title=MangoHost Bedrock testi::' + message)
+              else:
+                  message = f'UDP yanıtı RakNet pong değil (ID={reply[0] if reply else "boş"})'
+                  print('! ' + message)
+                  print('::warning title=MangoHost Bedrock testi::' + message)
+          except OSError as exc:
+              message = f'Bedrock UDP yanıtı alınamadı: {exc}; TCP testi başarılı.'
+              print('! ' + message)
+              print('::warning title=MangoHost Bedrock testi::' + message)
+          PY
+
+  hub:
+    if: ${{ inputs.mode != 'mangohost-test' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+
+    steps:
+      # ---------------------------------------------------------------- hazırlık
+      - uses: actions/checkout@v4
+
+      # Runner değişince dünya artifact'tan runtime/data'ya açılır; Docker
+      # bind mount'ları ve tüm workflow log yönlendirmeleri için dizinler hazır olsun.
+      - name: Çalışma dizinlerini hazırla
+        run: mkdir -p logs artifacts runtime/data/{auth,lobby,survival,skyblock,bedwars,duello,parkur}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Disk alanı (runner'da 14 GB boş olabilir)
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android 2>/dev/null || true
+          sudo apt-get clean
+          df -h /
+
+      - name: Sırlar ve config üretimi
+        env:
+          VELOCITY_SECRET: ${{ secrets.VELOCITY_SECRET }}
+          RCON_PASSWORD: ${{ secrets.RCON_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PLAYIT_SECRET: ${{ secrets.PLAYIT_SECRET }}
+          MC_VERSION: ${{ env.MC_VERSION }}
+        run: |
+          # gradyanlar önce: config'ler üretilmiş renklerle dolsun
+          python3 scripts/gradient.py --apply
+          # sırlar boşsa render.py üretir (run içinde yaşar) — sunucu yine çalışır
+          python3 scripts/render.py
+          # Render dosyaları 0600: container kullanıcısını runner ile eşleştir.
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+          # compose, sırları ve bellek limitlerini .env'den okur.
+          # Sadece rooms.env eklemek YETMİYOR: VELOCITY_SECRET / RCON_PASSWORD
+          # da .env'de olmalı, yoksa 'docker compose up' ${VAR:?} yüzünden patlar.
+          test -f .env || cp .env.example .env
+          # sırlar boşsa üret (CI'da secret yoksa sunucu yine çalışsın)
+          if ! grep -qE "^VELOCITY_SECRET=.+" .env; then
+            echo "VELOCITY_SECRET=$(openssl rand -base64 24 | tr -d '/+=')" >> .env
+          fi
+          if ! grep -qE "^RCON_PASSWORD=.+" .env; then
+            echo "RCON_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=')" >> .env
+          fi
+          # container bellek limitleri (render üretir) → compose bunu okur
+          grep -q "_MEM=" .env || cat runtime/rooms.env >> .env
+          echo "--- .env anahtarları ---"
+          grep -oE "^[A-Z0-9_]+=" .env | tr -d '=' | tr '\n' ' '; echo
+
+      - name: Plugin ve çekirdek indir
+        run: |
+          node scripts/plugins.mjs download
+          ls -lh runtime/plugins | head -25
+
+      - name: Önceki dünyayı geri yükle
+        id: restore
+        run: |
+          mkdir -p artifacts
+          # en son başarılı run'ın artifact'ını indir (varsa)
+          gh run download --repo "$GITHUB_REPOSITORY" \
+            --name craftya-world --dir artifacts/latest 2>/dev/null || echo "önceki dünya yok (ilk açılış)"
+          if ls artifacts/latest/*.tar.gz >/dev/null 2>&1; then
+            ./scripts/world-sync.sh restore "$(ls -1t artifacts/latest/*.tar.gz | head -1)"
+            echo "restored=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "restored=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # ---------------------------------------------------------------- sunucu
+      - name: Sunucuları başlat
+        run: |
+          # Boş değerler 'required variable ... is missing a value' hatası verir.
+          # rooms.env'deki BOŞ satırları at, sadece KEY=VALUE olanları tut.
+          if [ -f runtime/rooms.env ]; then
+            grep -E '^[A-Z0-9_]+=.+' runtime/rooms.env >> .env || true
+          fi
+          echo "--- .env (değerler gizli) ---"
+          sed -E 's/=.*/=<dolu>/' .env
+          echo "--- _MEM satırları ---"
+          grep -c '_MEM=' .env || echo "0"
+          docker compose -f docker-compose.hub.yml config >/dev/null || {
+            echo "HATA: compose config geçersiz"; exit 1; }
+          docker compose -f docker-compose.hub.yml up -d
+          echo "containers:"; docker compose -f docker-compose.hub.yml ps
+
+      - name: Hazır olana kadar bekle
+        run: |
+          echo "odaların açılması bekleniyor (en fazla 8 dk)..."
+          for i in $(seq 1 96); do
+            ready=0
+            for p in 25566 25567 25568 25569 25570 25571 25572; do
+              if timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/$p" 2>/dev/null; then
+                ready=$((ready+1))
+              fi
+            done
+            if [ "$ready" -ge 7 ]; then
+              echo "7 oda hazır (6 oyun + limbo, tur $i)"
+              break
+            fi
+            echo "  tur $i: $ready/7 oda açık"
+            sleep 5
+          done
+          if [ "$ready" -lt 7 ]; then
+            echo "HATA: yalnızca $ready/7 oda portu açıldı; container çıkışları:"
+            docker compose -f docker-compose.hub.yml ps -a
+            for r in auth lobby survival skyblock bedwars duello parkur velocity; do
+              echo "--- $r ---"
+              docker logs --tail=80 "hub-$r" 2>&1 || true
+            done
+            exit 1
+          fi
+          # Proxy de zorunlu: tünel yalnızca Velocity'ye bağlanır.
+          timeout 30 bash -c 'until echo > /dev/tcp/127.0.0.1/25565 2>/dev/null; do sleep 2; done' \
+            || { echo "HATA: Velocity portu 25565 açılmadı"; docker logs --tail=100 hub-velocity || true; exit 1; }
+          echo "7 oda + Velocity hazır"
+
+      - name: Proxy pluginleri yüklendi mi (/hub / Geyser / LibreLogin)
+        run: |
+          mkdir -p logs
+          # Port açılır açılmaz plugin log'u henüz gelmemiş olabilir. Başlangıç
+          # loglarını 2 dk boyunca yenile; sonra JAR'ları ve container'ı doğrula.
+          for i in $(seq 1 12); do
+            docker compose -f docker-compose.hub.yml logs --no-color --since=10m velocity > logs/velocity.log 2>&1 || true
+            if grep -qiE 'velocity-hub-command|Geyser|Floodgate|LibreLogin' logs/velocity.log; then
+              echo "Velocity plugin başlangıç logu görüldü (tur $i)"
+            fi
+            sleep 10
+          done
+          docker compose -f docker-compose.hub.yml logs --no-color --since=10m velocity > logs/velocity.log 2>&1 || true
+          docker inspect -f 'velocity running={{.State.Running}}' hub-velocity | tee logs/velocity-state.log
+          docker inspect -f '{{.State.Running}}' hub-velocity | grep -q true || {
+            echo "✗ Velocity container çalışmıyor"; exit 1; }
+          rc=0
+          for jar in velocity-hub-command geyser floodgate librelogin; do
+            if [ -s "runtime/proxy-plugins/$jar.jar" ]; then
+              echo "✓ $jar.jar mevcut"
+            else
+              echo "✗ zorunlu proxy plugin JAR eksik: $jar.jar"
+              rc=1
+            fi
+          done
+          # Log adları sürüme göre değişebildiği için eşleşmeyen isimleri uyarı
+          # say; eksik dosya/container ise yukarıda kesin hata olarak yakalanır.
+          for plug in velocity-hub-command Geyser Floodgate LibreLogin; do
+            grep -qi "$plug" logs/velocity.log \
+              && echo "✓ $plug logda göründü" \
+              || echo "! $plug adı logda bulunmadı; velocity.log artifact'ına bak"
+          done
+          grep -iE 'registered.*(hub|lobby)|/hub|/lobby' logs/velocity.log | head -5 \
+            && echo "✓ /hub komutu log'da göründü" \
+            || echo "! /hub komut kaydı log'da görünmedi"
+          echo "--- velocity log (ilk 80) ---"
+          head -80 logs/velocity.log || true
+          exit $rc
+
+      - name: Yetkiler yüklendi mi (LuckPerms + kurucu)
+        run: |
+          mkdir -p logs
+          # LuckPerms gerçekten yüklendi mi + gruplar okundu mu
+          docker compose -f docker-compose.hub.yml logs lobby > logs/lobby-auth.log 2>&1 || true
+          if grep -qiE "luckperms.*(enabled|loaded)" logs/lobby-auth.log; then
+            echo "✓ LuckPerms yüklendi"
+          else
+            echo "✗ LuckPerms yüklenmedi — yetkiler çalışmaz"
+          fi
+          # gruplar okundu mu (grup sayısı log'da veya /lp info ile)
+          if docker compose -f docker-compose.hub.yml exec -T lobby \
+               rcon-cli --port 25578 lp listgroups 2>/dev/null | grep -q kurucu; then
+            echo "✓ gruplar yüklendi: kurucu/oyuncu/vip/mod/admin/bot"
+          else
+            echo "! /lp listgroups cevap vermedi — LuckPerms henüz hazır olmayabilir"
+          fi
+          # otomatik yetki: kurucu oyuncu tanımlı mı
+          if docker compose -f docker-compose.hub.yml exec -T lobby \
+               rcon-cli --port 25578 lp user .bozturk2642 info 2>/dev/null | grep -qi kurucu; then
+            echo "✓ .bozturk2642 → kurucu (Bedrock yetkisi hazır)"
+          else
+            echo "! .bozturk2642 henüz kayıtlı değil (oyuncu ilk girişte otomatik atanır)"
+          fi
+          echo "--- oyunda teyit: /lp user <isim> info ---"
+
+      - name: TCP/UDP tüneli (Pinggy — geçici, hesap/secret gerekmez)
+        id: pinggy-tunnel
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          docker pull pinggy/pinggy
+          # Java TCP: dışarıdan gelen paketleri proxy'nin 25565 portuna ilet.
+          docker rm -f pinggy-java pinggy-bedrock >/dev/null 2>&1 || true
+          docker run -d -i --name pinggy-java --network host \
+            pinggy/pinggy -p 443 -R0:localhost:25565 tcp@free.pinggy.io
+          # Bedrock UDP: Geyser'in 19132/udp portu.
+          docker run -d -i --name pinggy-bedrock --network host \
+            pinggy/pinggy -p 443 -R0:localhost:19132 udp@free.pinggy.io
+
+          java_addr=""; bedrock_addr=""
+          for i in $(seq 1 15); do
+            docker logs --tail=100 pinggy-java > logs/pinggy-java.log 2>&1 || true
+            docker logs --tail=100 pinggy-bedrock > logs/pinggy-bedrock.log 2>&1 || true
+            java_addr=$(grep -Eo 'tcp://[^[:space:]]+' logs/pinggy-java.log | head -1 | tr -d '\r,;' || true)
+            bedrock_addr=$(grep -Eo 'udp://[^[:space:]]+' logs/pinggy-bedrock.log | head -1 | tr -d '\r,;' || true)
+            [ -n "$java_addr" ] && break
+            sleep 2
+          done
+          echo "--- Pinggy Java tunnel ---"
+          cat logs/pinggy-java.log
+          echo "--- Pinggy Bedrock tunnel ---"
+          cat logs/pinggy-bedrock.log
+          if [ -z "$java_addr" ]; then
+            echo "::error::Pinggy Java TCP adresi logda bulunamadı"
+            exit 1
+          fi
+          echo "java=$java_addr" >> "$GITHUB_OUTPUT"
+          echo "bedrock=$bedrock_addr" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Geçici Craftya bağlantı adresleri"
+            echo "- Java: **$java_addr**"
+            if [ -n "$bedrock_addr" ]; then
+              echo "- Bedrock UDP: **$bedrock_addr**"
+            else
+              echo "- Bedrock UDP adresi alınamadı; logları kontrol et."
+            fi
+            echo "- Ücretsiz tünel adresi bağlantı yenilenince değişebilir."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------- çalışma
+      - name: Sunucu çalışıyor (devir zamanına kadar)
+        if: ${{ always() && steps.pinggy-tunnel.outputs.java != '' }}
+        env:
+          RUN_MINUTES_INPUT: ${{ github.event.inputs.run_minutes }}
+        run: |
+          # test modunda kısa süre çalış
+          if [ -n "$RUN_MINUTES_INPUT" ]; then
+            RUN_MINUTES="$RUN_MINUTES_INPUT"
+            echo "TEST MODU: $RUN_MINUTES dk çalışıp duracak, devir zinciri kurulmayacak"
+          fi
+          echo "başlangıç: $(date -u +%H:%M:%S)"
+          # Governor geçici kapalı: ilk açılışta cgroup küçültmesinin oda süreçlerini
+          # düşürüp düşürmediğini ayırıyoruz. Sağlık döngüsü her oda için log toplar.
+          echo "Bellek governor bu tanı çalıştırmasında kapalı"
+          END=$(( $(date +%s) + RUN_MINUTES * 60 ))
+          while [ "$(date +%s)" -lt "$END" ]; do
+            echo "--- $(date -u +%H:%M:%S) ---"
+            for r in velocity auth lobby survival skyblock bedwars duello parkur; do
+              st=$(docker inspect -f '{{.State.Status}}' "hub-$r" 2>/dev/null || echo yok)
+              mem=$(docker stats --no-stream --format '{{.MemUsage}}' "hub-$r" 2>/dev/null || echo -)
+              printf '  %-10s %-8s %s\n' "$r" "$st" "$mem"
+              if [ "$st" != running ]; then
+                echo "HATA: hub-$r durdu"
+                docker inspect -f 'exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}' "hub-$r" || true
+                docker logs --tail=120 "hub-$r" 2>&1 || true
+                exit 1
+              fi
+            done
+            sleep 60
+          done
+
+      # ---------------------------------------------------------------- devir
+      - name: Duyuru (bakım)
+        if: always()
+        run: |
+          for r in lobby survival skyblock bedwars duello parkur; do
+            docker exec "hub-$r" rcon-cli say "§e[Bakim] §7Sunucu yeniden basliyor, 30 saniye icinde geri donun." 2>/dev/null || true
+          done
+          sleep 10
+
+      - name: Dünyayı kaydet ve arşivle
+        if: always()
+        id: archive
+        run: |
+          set -o pipefail
+          mkdir -p logs runtime/data artifacts
+          ./scripts/world-sync.sh save 2>&1 | tee logs/world-save.log || true
+          echo "--- kalıcı dünya dizinleri ---" | tee logs/world-data.log
+          find runtime/data -maxdepth 3 -type d -print | tee -a logs/world-data.log
+          if find runtime/data -mindepth 2 -maxdepth 2 -type d -name world -print -quit | grep -q .; then
+            ./scripts/world-sync.sh upload 2>&1 | tee logs/world-upload.log
+          else
+            echo "::warning::Henüz dünya klasörü yok; ilk sunucu açılışı tamamlanmadığı için arşiv atlandı."
+          fi
+
+      - name: Dünyayı artifact olarak yükle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftya-world
+          path: artifacts/craftya-world-*.tar.gz
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Logları sakla (hata ayıklama)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftya-logs-${{ github.run_number }}
+          path: |
+            logs/
+            runtime/rooms/*/logs/latest.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Durdur
+        if: always()
+        run: |
+          docker rm -f pinggy-java pinggy-bedrock playit-agent >/dev/null 2>&1 || true
+          docker compose -f docker-compose.hub.yml down || true
+
+      # ---------------------------------------------------------------- zincir
+      - name: Sonraki run'ı kuyruğa at (kesintisiz zincir)
+        # Test modunda (kısa süre) zincir KURULMAZ — yoksa hiç durmayan döngü olur.
+        if: always() && github.event.inputs.run_minutes == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "sonraki devir tetikleniyor..."
+          gh workflow run hub.yml --repo "$GITHUB_REPOSITORY" -f mode=chain || \
+            echo "uyarı: sonraki run tetiklenemedi — schedule (6 saatlik) emniyet ağı devrede"

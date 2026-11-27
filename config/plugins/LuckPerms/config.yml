@@ -1,0 +1,9 @@
+# LuckPerms — yetki ve prefix. Gruplar: kurucu > admin > mod > vip > oyuncu > bot
+server: craftya
+
+# Veri deposu: SQLite (tek dosya, 6 oda için yeterli; global veri Supabase'de)
+storage-method: sqlite
+storage-file: luckperms.db
+
+# Senkron: odalar arası geçişte yetki tutarlı olsun
+sync-minutes: 3

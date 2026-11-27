@@ -1,0 +1,10 @@
+# Hayatta Kalma — ana oda. Koruma GriefPrevention, blok geçmişi CoreProtect.
+mode: survival
+difficulty: normal
+max_players: 20
+view_distance: 8
+sim_distance: 6
+seed: craftya
+xmx: 2304M
+softmax: 704M
+motd: hayatta kalma          # MOTD açıklaması — renk gradient.py'den

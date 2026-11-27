@@ -1,0 +1,5 @@
+# Floodgate — Bedrock oyuncularına otomatik kimlik (Java hesabı gerekmez)
+# İmza anahtarı ilk açılışta üretilir: key.pem — SIRDIR, yedeğe girer, repoya girmez.
+username-prefix: '.'
+replace-spaces: true
+enable-own-skull-ownership: true

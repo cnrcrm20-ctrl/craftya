@@ -1,0 +1,11 @@
+# BedWars — "Maden Çekirdeği" haritası (bkz. BRAIN.md §4.2)
+mode: adventure
+difficulty: peaceful
+max_players: 12
+view_distance: 8
+sim_distance: 6
+seed: bedwars
+level_type: minecraft:flat
+xmx: 2304M
+softmax: 704M
+motd: 6 takim, dev blok          # MOTD açıklaması — renk gradient.py'den

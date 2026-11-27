@@ -1,0 +1,45 @@
+{
+  "_comment": "craftya-bot ayarları. config.json olarak kopyala. Sır yok: cracked sunucuda bot kendi şifresini kendi kaydeder.",
+
+  "host": "mc.craftya.dev",
+  "port": 25569,
+  "_port_note": "Proxy'den geçmez: doğrudan odanın portuna bağlanır (velocity forwarding botu reddeder).",
+
+  "username": "craftya-bot",
+  "version": "auto",
+
+  "auth": {
+    "enabled": true,
+    "password": "BOT-PAROLASI-BURAYA",
+    "_note": "İlk girişte /register <şifre>, sonrakilerde /login <şifre>. AuthMe kuruluysa gerekli."
+  },
+
+  "scan": {
+    "radius": 96,
+    "step": 4,
+    "maxY": 120,
+    "minY": -20,
+    "savePath": "out/scan.json",
+    "teleportStep": 24,
+    "_note": "radius: merkezden kaç blok. step: kaç blokta bir taransın. Yüksek step = hızlı ama kaba."
+  },
+
+  "apply": {
+    "planPath": "out/plan.json",
+    "dryRun": true,
+    "_note": "dryRun=true iken komut çalıştırmaz, sadece listeler. Önce dryRun ile bak."
+  },
+
+  "guard": {
+    "mode": "observer",
+    "chatLogPath": "out/chat.log",
+    "alertCommands": [],
+    "_note": "observer = sadece loglar, işlem yapmaz. İlk aşamada bu doğru."
+  },
+
+  "reconnect": {
+    "enabled": true,
+    "minDelayMs": 3000,
+    "maxDelayMs": 60000
+  }
+}

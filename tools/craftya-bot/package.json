@@ -1,0 +1,17 @@
+{
+  "name": "craftya-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Craftya sunucusunun gözü: dünyayı okur, inşa eder, doğrular. Ayrıca ilk kademe moderasyon.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "scan": "node src/scan.js",
+    "apply": "node src/apply.js",
+    "verify": "node src/verify.js",
+    "guard": "node src/guard.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.20.1"
+  }
+}

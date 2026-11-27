@@ -1,0 +1,10 @@
+# Lobi — oda seçimi, NPC'ler. PvP kapalı, hasar yok.
+mode: adventure
+difficulty: peaceful
+max_players: 100
+view_distance: 6
+sim_distance: 4
+seed: lobby
+xmx: 1280M
+softmax: 384M
+motd: bir oda sec          # MOTD açıklaması — renk gradient.py'den
